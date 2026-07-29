@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDisplayName</key>
+    <string>AgendAI 会小纪</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.local.aitingji</string>
+    <key>CFBundleName</key>
+    <string>AgendAI 会小纪</string>
+    <key>CFBundleExecutable</key>
+    <string>AgendAI 会小纪</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+    </dict>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>会小纪需要访问麦克风，用于录制线下会议声音并生成转写记录。</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>会小纪需要屏幕录制权限，用于线上会议场景采集屏幕、窗口和相关电脑音频。</string>
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>会小纪需要系统音频捕获权限，用于线上会议场景录制电脑播放的会议声音。</string>
+</dict>
+</plist>

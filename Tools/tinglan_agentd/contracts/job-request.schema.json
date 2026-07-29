@@ -1,0 +1,250 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "request_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$"
+    },
+    "meeting": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 10000,
+          "pattern": "^(?:|\\S(?:[\\s\\S]*\\S)?)$"
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "ended_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "timezone": {
+          "type": "string",
+          "maxLength": 200,
+          "pattern": "^\\S(?:[\\s\\S]*\\S)?$"
+        },
+        "capture_source": {
+          "type": "string",
+          "maxLength": 200,
+          "pattern": "^\\S(?:[\\s\\S]*\\S)?$"
+        },
+        "participants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "maxLength": 500,
+                "pattern": "^\\S(?:[\\s\\S]*\\S)?$"
+              },
+              "role": {
+                "type": "string",
+                "maxLength": 500,
+                "pattern": "^\\S(?:[\\s\\S]*\\S)?$"
+              },
+              "speaker": {
+                "type": "string",
+                "maxLength": 500,
+                "pattern": "^\\S(?:[\\s\\S]*\\S)?$"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 500
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "started_at",
+        "ended_at",
+        "timezone",
+        "capture_source",
+        "participants"
+      ],
+      "additionalProperties": false,
+      "description": "结构 Schema 校验 ISO 时间；ended_at >= started_at 由 runtime Zod 跨字段门禁。"
+    },
+    "transcript": {
+      "type": "object",
+      "properties": {
+        "language": {
+          "type": "string",
+          "maxLength": 100,
+          "pattern": "^\\S(?:[\\s\\S]*\\S)?$"
+        },
+        "plain_text": {
+          "type": "string",
+          "maxLength": 20971520,
+          "pattern": "^(?:|\\S(?:[\\s\\S]*\\S)?)$"
+        },
+        "segments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "maxLength": 200,
+                "pattern": "^\\S(?:[\\s\\S]*\\S)?$"
+              },
+              "start_ms": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "end_ms": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "speaker": {
+                "type": "string",
+                "maxLength": 10000,
+                "pattern": "^(?:|\\S(?:[\\s\\S]*\\S)?)$"
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 1000000,
+                "pattern": "^(?:|\\S(?:[\\s\\S]*\\S)?)$"
+              }
+            },
+            "required": [
+              "id",
+              "start_ms",
+              "end_ms",
+              "speaker",
+              "text"
+            ],
+            "additionalProperties": false,
+            "description": "结构 Schema 校验非负安全整数；end_ms >= start_ms 由 runtime Zod 跨字段门禁。"
+          },
+          "maxItems": 200000
+        }
+      },
+      "required": [
+        "language",
+        "plain_text",
+        "segments"
+      ],
+      "additionalProperties": false
+    },
+    "attachments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 200,
+            "pattern": "^\\S(?:[\\s\\S]*\\S)?$"
+          },
+          "file_name": {
+            "type": "string",
+            "maxLength": 255,
+            "pattern": "^\\S(?:[\\s\\S]*\\S)?$"
+          },
+          "media_type": {
+            "type": "string",
+            "maxLength": 255,
+            "pattern": "^\\S(?:[\\s\\S]*\\S)?$"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 104857600
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "source_path": {
+            "type": "string",
+            "pattern": "^\\/[^\\0]*$"
+          }
+        },
+        "required": [
+          "id",
+          "file_name",
+          "media_type",
+          "size_bytes",
+          "sha256",
+          "source_path"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 20,
+      "description": "最多 20 个附件、单附件 100 MiB；总附件 <= 500 MiB 由 runtime Zod 跨字段门禁。"
+    },
+    "analysis": {
+      "type": "object",
+      "properties": {
+        "goal": {
+          "type": "string",
+          "maxLength": 1000000,
+          "pattern": "^(?:|\\S(?:[\\s\\S]*\\S)?)$"
+        },
+        "language": {
+          "type": "string",
+          "maxLength": 100,
+          "pattern": "^\\S(?:[\\s\\S]*\\S)?$"
+        }
+      },
+      "required": [
+        "goal",
+        "language"
+      ],
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "report_format": {
+          "type": "string",
+          "const": "html"
+        },
+        "todos_format": {
+          "type": "string",
+          "const": "json"
+        },
+        "locale": {
+          "type": "string",
+          "maxLength": 100,
+          "pattern": "^\\S(?:[\\s\\S]*\\S)?$"
+        }
+      },
+      "required": [
+        "report_format",
+        "todos_format",
+        "locale"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema_version",
+    "request_id",
+    "meeting",
+    "transcript",
+    "attachments",
+    "analysis",
+    "output"
+  ],
+  "additionalProperties": false,
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}

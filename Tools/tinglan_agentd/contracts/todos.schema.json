@@ -1,0 +1,150 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "job_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$"
+    },
+    "meeting_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 200,
+            "pattern": "^\\S(?:[\\s\\S]*\\S)?$"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 10000,
+            "pattern": "^\\S(?:[\\s\\S]*\\S)?$"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 100000,
+            "pattern": "^(?:|\\S(?:[\\s\\S]*\\S)?)$"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000,
+                "pattern": "^\\S(?:[\\s\\S]*\\S)?$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deadline": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000,
+                "pattern": "^\\S(?:[\\s\\S]*\\S)?$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deliverable": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100000,
+                "pattern": "^(?:|\\S(?:[\\s\\S]*\\S)?)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "acceptance_criteria": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100000,
+                "pattern": "^(?:|\\S(?:[\\s\\S]*\\S)?)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "segment_id": {
+                  "type": "string",
+                  "maxLength": 200,
+                  "pattern": "^\\S(?:[\\s\\S]*\\S)?$"
+                },
+                "quote": {
+                  "type": "string",
+                  "maxLength": 100000,
+                  "pattern": "^\\S(?:[\\s\\S]*\\S)?$"
+                },
+                "time_range": {
+                  "type": "string",
+                  "maxLength": 200,
+                  "pattern": "^\\S(?:[\\s\\S]*\\S)?$"
+                }
+              },
+              "required": [
+                "segment_id",
+                "quote",
+                "time_range"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "confirmation_status": {
+            "type": "string",
+            "const": "pending_confirmation"
+          },
+          "proposed_workflow": {
+            "type": "string",
+            "enum": [
+              "none",
+              "zentao"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "description",
+          "owner",
+          "deadline",
+          "deliverable",
+          "acceptance_criteria",
+          "evidence",
+          "confirmation_status",
+          "proposed_workflow"
+        ],
+        "additionalProperties": false,
+        "description": "owner/deadline 非空时 evidence 必须非空，此规则由 runtime Zod 跨字段门禁。"
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "job_id",
+    "meeting_id",
+    "items"
+  ],
+  "additionalProperties": false,
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}

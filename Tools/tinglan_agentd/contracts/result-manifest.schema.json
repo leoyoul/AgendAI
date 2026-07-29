@@ -1,0 +1,169 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "job_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$"
+    },
+    "request_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$"
+    },
+    "request_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "meeting_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$"
+    },
+    "provider": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 200,
+          "pattern": "^\\S(?:[\\s\\S]*\\S)?$"
+        },
+        "run_id": {
+          "type": "string",
+          "maxLength": 500,
+          "pattern": "^\\S(?:[\\s\\S]*\\S)?$"
+        }
+      },
+      "required": [
+        "name",
+        "run_id"
+      ],
+      "additionalProperties": false
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "report": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "report.html"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 20971520
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "path",
+        "size_bytes",
+        "sha256"
+      ],
+      "additionalProperties": false
+    },
+    "todos": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "const": "todos.json"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5242880
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "path",
+        "size_bytes",
+        "sha256",
+        "count"
+      ],
+      "additionalProperties": false
+    },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^(?!\\/)(?![A-Za-z]:\\/)(?!.*(?:^|\\/)\\.\\.?(?:\\/|$))(?!.*\\/\\/)(?!.*\\\\)[^\\0/]+(?:\\/[^\\0/]+)*$"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 52428800
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "media_type": {
+            "type": "string",
+            "maxLength": 255,
+            "pattern": "^\\S(?:[\\s\\S]*\\S)?$"
+          }
+        },
+        "required": [
+          "path",
+          "size_bytes",
+          "sha256",
+          "media_type"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 100
+    },
+    "skills_used": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 500,
+        "pattern": "^\\S(?:[\\s\\S]*\\S)?$"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 2000
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "job_id",
+    "request_id",
+    "request_hash",
+    "meeting_id",
+    "provider",
+    "generated_at",
+    "report",
+    "todos",
+    "assets",
+    "skills_used",
+    "warnings"
+  ],
+  "additionalProperties": false,
+  "description": "结构 Schema 固定 report.html/todos.json 并限制文件数量和单文件大小；report、todos、assets 声明总量 <= 200 MiB 由 runtime Zod 跨字段门禁，manifest.json 自身实际字节由结果包 runtime 校验计入 200 MiB 总量。",
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}
