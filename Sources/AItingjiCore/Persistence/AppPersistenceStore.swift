@@ -1,4 +1,5 @@
 import Foundation
+import SQLite3
 
 public struct AppPersistenceSnapshot: Sendable {
     public var meetings: [Meeting]
@@ -116,6 +117,7 @@ public final class AppPersistenceStore: @unchecked Sendable {
             let directory = url.deletingLastPathComponent()
             let directoryAlreadyExisted = FileManager.default.fileExists(atPath: directory.path)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try Self.migrateLegacyDefaultDatabaseIfNeeded(destinationURL: url)
             // 只收紧本应用目录或本次新建目录，绝不修改调用者传入的共享父目录（例如 /tmp）。
             if !directoryAlreadyExisted || directory.lastPathComponent == "会小纪" {
                 try Self.restrictPermissions(of: directory, to: 0o700)
@@ -179,6 +181,101 @@ public final class AppPersistenceStore: @unchecked Sendable {
             .appendingPathComponent("会小纪", isDirectory: true)
             .appendingPathComponent("ai-tingji.sqlite")
             .path
+    }
+
+    static func migrateLegacyDatabaseIfNeeded(destinationURL: URL, legacyDatabaseURL: URL) throws {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: legacyDatabaseURL.path),
+              try meetingCount(at: legacyDatabaseURL) > 0,
+              try meetingCount(at: destinationURL) == 0
+        else {
+            return
+        }
+
+        try fileManager.createDirectory(
+            at: destinationURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
+        for suffix in ["", "-wal", "-shm"] {
+            let path = destinationURL.path + suffix
+            if fileManager.fileExists(atPath: path) {
+                try fileManager.removeItem(atPath: path)
+            }
+        }
+
+        var source: OpaquePointer?
+        var destination: OpaquePointer?
+        guard sqlite3_open_v2(legacyDatabaseURL.path, &source, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
+              let source
+        else {
+            let message = source.flatMap { sqlite3_errmsg($0) }.map { String(cString: $0) } ?? "unknown"
+            if let source { sqlite3_close_v2(source) }
+            throw DatabaseError.openFailed(message)
+        }
+        defer { sqlite3_close_v2(source) }
+
+        let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX
+        guard sqlite3_open_v2(destinationURL.path, &destination, flags, nil) == SQLITE_OK,
+              let destination
+        else {
+            let message = destination.flatMap { sqlite3_errmsg($0) }.map { String(cString: $0) } ?? "unknown"
+            if let destination { sqlite3_close_v2(destination) }
+            throw DatabaseError.openFailed(message)
+        }
+        defer { sqlite3_close_v2(destination) }
+
+        guard let backup = sqlite3_backup_init(destination, "main", source, "main") else {
+            let message = String(cString: sqlite3_errmsg(destination))
+            throw DatabaseError.executeFailed(message)
+        }
+        defer { sqlite3_backup_finish(backup) }
+
+        guard sqlite3_backup_step(backup, -1) == SQLITE_DONE else {
+            throw DatabaseError.executeFailed(String(cString: sqlite3_errmsg(destination)))
+        }
+    }
+
+    private static func migrateLegacyDefaultDatabaseIfNeeded(destinationURL: URL) throws {
+        let expectedDestination = URL(fileURLWithPath: defaultDatabasePath()).standardizedFileURL
+        guard destinationURL.standardizedFileURL == expectedDestination else {
+            return
+        }
+
+        let applicationSupport = destinationURL.deletingLastPathComponent().deletingLastPathComponent()
+        let legacyDatabaseURL = applicationSupport
+            .appendingPathComponent("听澜", isDirectory: true)
+            .appendingPathComponent("ai-tingji.sqlite")
+        try migrateLegacyDatabaseIfNeeded(destinationURL: destinationURL, legacyDatabaseURL: legacyDatabaseURL)
+    }
+
+    private static func meetingCount(at url: URL) throws -> Int {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return 0
+        }
+
+        var database: OpaquePointer?
+        guard sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
+              let database
+        else {
+            let message = database.flatMap { sqlite3_errmsg($0) }.map { String(cString: $0) } ?? "unknown"
+            if let database { sqlite3_close_v2(database) }
+            throw DatabaseError.openFailed(message)
+        }
+        defer { sqlite3_close_v2(database) }
+
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, "SELECT COUNT(*) FROM meetings", -1, &statement, nil) == SQLITE_OK,
+              let statement
+        else {
+            return 0
+        }
+        defer { sqlite3_finalize(statement) }
+
+        guard sqlite3_step(statement) == SQLITE_ROW else {
+            throw DatabaseError.stepFailed(String(cString: sqlite3_errmsg(database)))
+        }
+        return Int(sqlite3_column_int64(statement, 0))
     }
 
     public func close() {

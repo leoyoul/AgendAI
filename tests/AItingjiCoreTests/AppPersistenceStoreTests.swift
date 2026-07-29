@@ -2,6 +2,37 @@ import Foundation
 import Testing
 @testable import AItingjiCore
 
+@Test func appPersistenceStoreMigratesLegacyMeetingDatabaseWithoutDeletingSource() throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("agendai-legacy-migration-\(UUID().uuidString)")
+    let legacyPath = root.appendingPathComponent("听澜/ai-tingji.sqlite").path
+    let destinationPath = root.appendingPathComponent("会小纪/ai-tingji.sqlite").path
+
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let legacyStore = try AppPersistenceStore(path: legacyPath)
+    try legacyStore.upsertMeeting(Meeting(
+        id: "legacy-meeting",
+        title: "历史会议",
+        status: .draft,
+        captureSource: .microphone,
+        createdAt: Date(timeIntervalSince1970: 1_700_000_000)
+    ))
+    legacyStore.close()
+
+    let destinationURL = URL(fileURLWithPath: destinationPath)
+    let legacyURL = URL(fileURLWithPath: legacyPath)
+    try AppPersistenceStore.migrateLegacyDatabaseIfNeeded(
+        destinationURL: destinationURL,
+        legacyDatabaseURL: legacyURL
+    )
+
+    let migratedStore = try AppPersistenceStore(path: destinationPath)
+    #expect(try migratedStore.loadSnapshot().meetings.map(\.id) == ["legacy-meeting"])
+    #expect(FileManager.default.fileExists(atPath: legacyPath))
+    migratedStore.close()
+}
+
 @Test func appPersistenceStoreCreatesDirectoryAndLoadsSnapshot() throws {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent("ai-tingji-store-\(UUID().uuidString)")
