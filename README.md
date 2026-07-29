@@ -5,10 +5,6 @@
 [![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-111111.svg)](#系统要求)
 [![License](https://img.shields.io/badge/license-MIT-2ea44f.svg)](LICENSE)
 
-<p align="center">
-  <img src="assets/screenshots/calendar-empty.png" alt="AgendAI 会小纪的周视图日历界面" width="900">
-</p>
-
 AgendAI 会小纪面向需要沉淀会议记录的个人和小团队。会议数据默认保存在本机；你可以接入自己的兼容 OpenAI API 的模型服务完成转写、纪要和分析。
 
 ## 适合什么场景
@@ -29,6 +25,20 @@ AgendAI 会小纪面向需要沉淀会议记录的个人和小团队。会议数
 | 发言人与词库 | 管理人员、别名、声纹样本和常用词；人工修改优先于自动结果。 |
 | 笔记与导出 | 支持文字和图片笔记；导出 Markdown、HTML 和原始转写。 |
 | AI 分析与 Agent | 独立生成分析结论和结构化待办，不覆盖正式会议纪要。 |
+
+## 界面预览
+
+会议日历展示会议时间分布和工作区入口；实际会议标题、人员和项目内容已打码。
+
+<p align="center">
+  <img src="assets/screenshots/calendar.png" alt="周视图日历与会议管理界面，会议内容已打码" width="900">
+</p>
+
+会议详情通过录音、转写记录、笔记、原始纪要、AI 分析和 Agent 标签组织同一场会议；下图的会议身份信息已打码。
+
+<p align="center">
+  <img src="assets/screenshots/minutes.png" alt="原始会议纪要生成与导出界面，会议身份信息已打码" width="900">
+</p>
 
 ## 使用流程
 
