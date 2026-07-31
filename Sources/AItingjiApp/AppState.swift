@@ -1899,7 +1899,13 @@ final class AppState {
         do {
             notes = try loadMeetingNoteContents(meetingID: meetingID, includeOriginalData: true)
         } catch {
-            statusMessage = "读取会议笔记失败：(error.localizedDescription)"
+            let reason = errorDescription(from: error)
+            statusMessage = "读取会议笔记失败：\(reason)"
+            appendDebugLog(
+                category: "纪要",
+                message: "手动纪要生成失败：阶段=读取会议笔记；失败原因=\(reason)；错误类型=\(errorTypeDescription(from: error))。",
+                meetingID: meetingID
+            )
             return
         }
         setMeetingNoteImageVisionStatus(notes, status: .processing)
@@ -1912,7 +1918,11 @@ final class AppState {
             $0.minutesGenerationError = nil
         }
         statusMessage = "“\(meeting.title)”已加入会议纪要生成队列，将按顺序使用“\(modelName)”执行。"
-        appendDebugLog(category: "纪要", message: "手动纪要生成已加入队列，模型：\(modelName)。", meetingID: meetingID)
+        appendDebugLog(
+            category: "纪要",
+            message: "手动纪要生成已加入队列：模型=\(modelName)；转写片段=\(segments.count)。",
+            meetingID: meetingID
+        )
 
         let task = Task { [weak self] in
             guard let self else { return }
@@ -1956,7 +1966,12 @@ final class AppState {
                 self.appendDebugLog(category: "纪要", message: "手动纪要生成已取消。", meetingID: meetingID)
             } catch {
                 self.setMeetingNoteImageVisionStatus(notes, status: .failed, error: error.localizedDescription)
-                self.markStandardMinutesGenerationFailed(meetingID: meetingID, error: error)
+                self.markStandardMinutesGenerationFailed(
+                    meetingID: meetingID,
+                    error: error,
+                    source: source,
+                    mode: "手动"
+                )
             }
         }
         meetingMinutesGenerationTasks[meetingID] = task
@@ -3805,6 +3820,11 @@ final class AppState {
         return error.localizedDescription
     }
 
+    private func errorTypeDescription(from error: Error) -> String {
+        let nsError = error as NSError
+        return "\(nsError.domain)#\(nsError.code)"
+    }
+
     private func prepareMeetingAudioWriter() throws {
         guard let activeRecordingMeetingID else {
             throw RecordingWriterError.missingMeeting
@@ -4058,7 +4078,12 @@ final class AppState {
         }
         postprocessingMeetingIDs.insert(meetingID)
         recentlyCompletedMeetingIDs.remove(meetingID)
-        appendDebugLog(category: "纪要", message: "自动纪要生成已加入队列。", meetingID: meetingID)
+        let queuedModelName = defaultModelSource(type: .agent).flatMap { $0.selectedModel ?? $0.name } ?? "未配置"
+        appendDebugLog(
+            category: "纪要",
+            message: "自动纪要生成已加入队列：模型=\(queuedModelName)；等待转写完成后生成。",
+            meetingID: meetingID
+        )
         if selectedMeetingID == meetingID {
             let sourceMessage = meetings.first(where: { $0.id == meetingID })?.captureSource == .imported
                 ? "转写记录已导入"
@@ -4104,11 +4129,11 @@ final class AppState {
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
-                lastErrorDescription = error.localizedDescription
+                lastErrorDescription = errorDescription(from: error)
                 guard attempt < Self.standardMinutesGenerationAttempts else { break }
                 appendDebugLog(
                     category: "纪要",
-                    message: "第 \(attempt) 次生成失败，准备自动重试：\(lastErrorDescription)。",
+                    message: "标准纪要生成第 \(attempt) 次失败：失败原因=\(lastErrorDescription)；错误类型=\(errorTypeDescription(from: error))；将自动重试。",
                     meetingID: meeting.id
                 )
                 if selectedMeetingID == meeting.id {
@@ -4124,15 +4149,25 @@ final class AppState {
         )
     }
 
-    private func markStandardMinutesGenerationFailed(meetingID: Meeting.ID, error: Error) {
-        let reason = error.localizedDescription
+    private func markStandardMinutesGenerationFailed(
+        meetingID: Meeting.ID,
+        error: Error,
+        source: ModelSource? = nil,
+        mode: String = "自动"
+    ) {
+        let reason = errorDescription(from: error)
+        let modelName = source.flatMap { $0.selectedModel ?? $0.name } ?? "未知"
         updateMeeting(id: meetingID) {
             $0.status = .failed
             $0.minutesGenerationError = reason
         }
         _ = setPostprocessRecoveryPending(false, meetingID: meetingID)
         recentlyCompletedMeetingIDs.remove(meetingID)
-        appendDebugLog(category: "纪要", message: "标准纪要生成失败：\(reason)。", meetingID: meetingID)
+        appendDebugLog(
+            category: "纪要",
+            message: "标准纪要生成失败：阶段=标准会议纪要；方式=\(mode)；模型=\(modelName)；失败原因=\(reason)；错误类型=\(errorTypeDescription(from: error))。",
+            meetingID: meetingID
+        )
         if selectedMeetingID == meetingID {
             refreshExportPreview()
             statusMessage = "标准会议纪要生成失败：\(reason) 可重新生成。"
@@ -4160,10 +4195,16 @@ final class AppState {
         do {
             notes = try loadMeetingNoteContents(meetingID: meetingID, includeOriginalData: true)
         } catch {
+            let reason = errorDescription(from: error)
             updateMeeting(id: meetingID) {
                 $0.status = .failed
-                $0.minutesGenerationError = "读取会议笔记失败：(error.localizedDescription)"
+                $0.minutesGenerationError = "读取会议笔记失败：\(reason)"
             }
+            appendDebugLog(
+                category: "纪要",
+                message: "自动纪要生成失败：阶段=读取会议笔记；失败原因=\(reason)；错误类型=\(errorTypeDescription(from: error))。",
+                meetingID: meetingID
+            )
             return false
         }
         guard !segments.isEmpty else {
@@ -4179,6 +4220,12 @@ final class AppState {
         }
         guard let source = defaultModelSource(type: .agent),
               source.baseURL.hasPrefix("mock://") || !source.baseURL.contains("example.com") else {
+            let reason = "未配置可用 Agent 模型"
+            appendDebugLog(
+                category: "纪要",
+                message: "自动纪要生成失败：阶段=模型配置；失败原因=\(reason)。",
+                meetingID: meetingID
+            )
             if meeting.captureSource == .imported {
                 updateMeeting(id: meetingID) {
                     $0.status = .failed
@@ -4243,7 +4290,7 @@ final class AppState {
             return false
         } catch {
             setMeetingNoteImageVisionStatus(notes, status: .failed, error: error.localizedDescription)
-            markStandardMinutesGenerationFailed(meetingID: meetingID, error: error)
+            markStandardMinutesGenerationFailed(meetingID: meetingID, error: error, source: source, mode: "自动")
             return false
         }
         return true

@@ -137,6 +137,12 @@ struct AppStateTranscriptImportTests {
         #expect(appState.canGenerateSelectedMeetingMinutes)
         #expect(try store.loadSnapshot().appSettings[AppSettingKey.pendingPostprocessMeetingIDs] == "[]")
         #expect(appState.statusMessage.contains("标准会议纪要生成失败"))
+        #expect(appState.debugLogEntries.contains {
+            $0.category == "纪要"
+                && $0.message.contains("失败原因=")
+                && $0.message.contains("错误类型=")
+                && $0.message.contains("标准纪要生成失败")
+        })
         #expect(await probe.callCount() == 6)
     }
 }
