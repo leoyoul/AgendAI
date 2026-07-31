@@ -133,8 +133,8 @@ public struct OpenAICompatiblePostprocessClient<Uploader: HTTPDataUploading>: Po
             )
             body = try JSONEncoder().encode(requestBody)
         case .responses:
-            // Responses API 使用 instructions/input，并通过 text.format 开启 JSON mode。
-            // chat_template_kwargs 是本地推理服务扩展字段，不发送给 OpenAI。
+            // Responses API 的 JSON 输出约束并非所有兼容服务都支持；严格 JSON
+            // 要求已写入 system prompt，避免不兼容的 text.format 导致上游直接断开。
             let requestBody = ResponsesRequest(
                 model: model,
                 instructions: systemPrompt,
@@ -145,7 +145,7 @@ public struct OpenAICompatiblePostprocessClient<Uploader: HTTPDataUploading>: Po
                     }),
                 maxOutputTokens: maxTokens,
                 store: false,
-                text: forceJSONObject ? .jsonObject : nil
+                text: nil
             )
             body = try JSONEncoder().encode(requestBody)
         }

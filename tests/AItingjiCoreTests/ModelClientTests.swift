@@ -432,7 +432,7 @@ func openAICompatiblePostprocessClientCallsResponsesAndParsesOutputText() async 
     #expect(bodyText.contains(#""input":"会议内容""#))
     #expect(bodyText.contains(#""max_output_tokens":4096"#))
     #expect(bodyText.contains(#""store":false"#))
-    #expect(bodyText.contains(#""text":{"format":{"type":"json_object"}}"#))
+    #expect(!bodyText.contains(#""text":{"format":{"type":"json_object"}}"#))
     #expect(!bodyText.contains("chat_template_kwargs"))
 }
 
