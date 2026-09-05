@@ -119,7 +119,7 @@ public final class AppPersistenceStore: @unchecked Sendable {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             try Self.migrateLegacyDefaultDatabaseIfNeeded(destinationURL: url)
             // 只收紧本应用目录或本次新建目录，绝不修改调用者传入的共享父目录（例如 /tmp）。
-            if !directoryAlreadyExisted || directory.lastPathComponent == "会小纪" {
+            if !directoryAlreadyExisted || ApplicationDataDirectory.isManagedRoot(directory) {
                 try Self.restrictPermissions(of: directory, to: 0o700)
             }
 
@@ -175,10 +175,7 @@ public final class AppPersistenceStore: @unchecked Sendable {
     }
 
     public static func defaultDatabasePath() -> String {
-        let applicationSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        return applicationSupport
-            .appendingPathComponent("会小纪", isDirectory: true)
+        ApplicationDataDirectory.rootURL
             .appendingPathComponent("ai-tingji.sqlite")
             .path
     }
@@ -237,6 +234,9 @@ public final class AppPersistenceStore: @unchecked Sendable {
     }
 
     private static func migrateLegacyDefaultDatabaseIfNeeded(destinationURL: URL) throws {
+        guard ApplicationDataDirectory.name == ApplicationDataDirectory.defaultName else {
+            return
+        }
         let expectedDestination = URL(fileURLWithPath: defaultDatabasePath()).standardizedFileURL
         guard destinationURL.standardizedFileURL == expectedDestination else {
             return

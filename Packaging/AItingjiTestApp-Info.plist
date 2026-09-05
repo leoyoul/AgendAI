@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDisplayName</key>
+    <string>AgendAI 会小纪 测试版</string>
+    <key>CFBundleExecutable</key>
+    <string>AgendAI 会小纪 测试版</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.local.aitingji.test</string>
+    <key>CFBundleName</key>
+    <string>AgendAI 会小纪 测试版</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.1</string>
+    <key>CFBundleVersion</key>
+    <string>2</string>
+    <key>AgendAIDataDirectoryName</key>
+    <string>会小纪测试版</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+    </dict>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>会小纪测试版需要访问麦克风，用于隔离测试会议录制。</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>会小纪测试版需要屏幕录制权限，用于隔离测试屏幕和电脑音频采集。</string>
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>会小纪测试版需要系统音频捕获权限，用于隔离测试电脑音频采集。</string>
+</dict>
+</plist>

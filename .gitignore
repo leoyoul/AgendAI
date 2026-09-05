@@ -18,6 +18,7 @@ uv.lock
 data/
 .data/
 dist/
+dist-test/
 dist-debug-package/
 output/
 docs/

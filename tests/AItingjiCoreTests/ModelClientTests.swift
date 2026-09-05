@@ -587,6 +587,8 @@ func openAICompatiblePostprocessClientSendsMultimodalResponsesContent() async th
     let bodyText = String(decoding: request.body, as: UTF8.self)
     #expect(bodyText.contains("input_image"))
     #expect(bodyText.contains("base64,BAU="))
+    #expect(bodyText.contains("\"role\":\"user\""))
+    #expect(bodyText.contains("\"detail\":\"auto\""))
 }
 
 @Test

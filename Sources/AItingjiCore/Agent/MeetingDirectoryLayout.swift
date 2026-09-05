@@ -19,10 +19,8 @@ public struct MeetingDirectoryLayout: Equatable, Sendable {
     }
 
     public static func `default`() -> MeetingDirectoryLayout {
-        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
         return MeetingDirectoryLayout(
-            applicationSupportDirectory: root.appendingPathComponent("会小纪", isDirectory: true)
+            applicationSupportDirectory: ApplicationDataDirectory.rootURL
         )
     }
 

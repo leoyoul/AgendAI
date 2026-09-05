@@ -1390,12 +1390,20 @@ struct AppStateMeetingMinutesTests {
             try await Task.sleep(for: .milliseconds(10))
         }
 
-        #expect(appState.selectedMeetingMinutesArtifact?.document.meetingID == meeting.id)
+        let generatedArtifact = try #require(appState.selectedMeetingMinutesArtifact)
+        #expect(generatedArtifact.document.meetingID == meeting.id)
         #expect(appState.statusMessage.contains("已生成"))
         let generatedSnapshot = try store.loadSnapshot()
         #expect(generatedSnapshot.meetings.first(where: { $0.id == meeting.id })?.title == "项目进展与后续安排")
         #expect(generatedSnapshot.segmentsByMeeting[meeting.id]?.first?.rawText == "讨论下周交付安排。")
         #expect(generatedSnapshot.appSettings[AppSettingKey.pendingPostprocessMeetingIDs] == "[]")
+
+        let noteID = try #require(appState.addMeetingNote(body: "初始笔记"))
+        #expect(appState.updateMeetingNote(noteID: noteID, body: "更新后的笔记"))
+        #expect(appState.selectedMeetingMinutesArtifact == generatedArtifact)
+        #expect(try generator.load(meetingID: meeting.id) == generatedArtifact)
+        #expect(appState.selectedMeetingMinutesGenerationError == "会议笔记已修改，请重新生成会议纪要。")
+
         let olderMeeting = Meeting(
             id: "meeting-app-minutes-older",
             title: "历史会议",
@@ -1432,6 +1440,55 @@ struct AppStateMeetingMinutesTests {
         reloadedAppState.selectedMeetingID = meeting.id
         #expect(reloadedAppState.selectedMeetingMinutesArtifact?.markdown.contains("## 五、后续行动项") == true)
         #expect(reloadedAppState.meetingMinutesArtifacts[olderMeeting.id]?.document.meetingID == olderMeeting.id)
+    }
+
+    @Test("failed regeneration keeps the last successful minutes visible and cached")
+    func failedRegenerationPreservesPreviousArtifact() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tinglan-minutes-regeneration-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try AppPersistenceStore(path: directory.appendingPathComponent("test.sqlite").path)
+        let meeting = Meeting(id: "regeneration", title: "重新生成", status: .done, createdAt: Date())
+        let segment = TranscriptSegment(id: "segment", meetingID: meeting.id, startMs: 0, endMs: 1_000, speakerLabel: "speaker_1", rawText: "保留旧纪要")
+        let source = ModelSource(id: "agent", type: .agent, name: "Agent", baseURL: "https://example.test/v1", selectedModel: "model", isDefault: true, enabled: true)
+        try store.upsertMeeting(meeting)
+        try store.upsertSegment(segment)
+        try store.upsertModelSource(source)
+        let probe = RegenerationResponseProbe()
+        let generator = MeetingMinutesGenerator(
+            storageDirectory: directory.appendingPathComponent("minutes", isDirectory: true),
+            modelResponseGenerator: { _, _, _ in await probe.response() }
+        )
+        let original = try await generator.generate(meeting: meeting, segments: [segment], source: source)
+        let appState = AppState(
+            storeFactory: { store },
+            pendingTranscriptionRootURL: directory.appendingPathComponent("PendingASR"),
+            resumePendingTranscriptions: false,
+            meetingMinutesGenerator: generator
+        )
+        appState.selectedMeetingID = meeting.id
+        #expect(appState.selectedMeetingMinutesArtifact == original)
+
+        appState.generateSelectedMeetingMinutes()
+        for _ in 0..<300 where appState.generatingMeetingMinutesIDs.contains(meeting.id) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        #expect(appState.selectedMeetingMinutesArtifact == original)
+        #expect(try generator.load(meetingID: meeting.id) == original)
+        #expect(appState.selectedMeetingMinutesGenerationError != nil)
+    }
+}
+
+private actor RegenerationResponseProbe {
+    private var requestCount = 0
+
+    func response() -> String {
+        requestCount += 1
+        if requestCount == 1 {
+            return "{\"subtitle\":\"旧纪要\",\"summary\":\"上一次成功内容\",\"conclusions\":[],\"actions\":[],\"risks\":[],\"milestones\":[],\"archive_items\":[]}"
+        }
+        return "这次生成失败"
     }
 }
 

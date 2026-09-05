@@ -67,6 +67,32 @@ struct MeetingMinutesArtifact: Equatable, Sendable {
     var markdown: String
     var html: String
     var noteVisionResults: [MeetingNoteVisionResult] = []
+    var noteVisionFailures: [MeetingNoteVisionFailure] = []
+
+    /// 应用内阅读不渲染内嵌 Base64 原图，避免大图片让 SwiftUI 文本布局卡死。
+    var displayMarkdown: String {
+        markdown
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line in
+                let value = String(line)
+                guard value.hasPrefix("!["), value.contains("](data:") else {
+                    return value
+                }
+                let name = value.dropFirst(2).prefix { $0 != "]" }
+                return "> 图片附件：\(name.isEmpty ? "图片" : name)（原图见 HTML 预览或导出）"
+            }
+            .joined(separator: "\n")
+    }
+}
+
+struct MeetingNoteVisionFailure: Equatable, Sendable {
+    var imageID: MeetingNoteImage.ID
+    var reason: String
+}
+
+private struct MeetingNoteVisionBatch: Sendable {
+    var results: [MeetingNoteVisionResult]
+    var failures: [MeetingNoteVisionFailure]
 }
 
 struct MeetingNoteVisionResult: Codable, Equatable, Sendable {
@@ -291,10 +317,13 @@ struct MeetingMinutesGenerator: Sendable {
         )
         let includedNotes = notes.filter(\.note.includeInMinutes)
         let selectedImages = includedNotes.flatMap(\.images)
-        let visionResults = try await visionResultsFor(
+        // 图片识别仅用于补充人工笔记。识别服务故障时保留原图附件，
+        // 继续用转写和笔记文字生成纪要。
+        let visionBatch = try await visionResultsFor(
             images: selectedImages,
             source: source
         )
+        let visionResults = visionBatch.results
         let noteContext = Self.noteContext(
             notes: includedNotes,
             visionResults: visionResults
@@ -324,22 +353,25 @@ struct MeetingMinutesGenerator: Sendable {
                 source: source,
                 systemPrompt: systemPrompt,
                 userText: userText,
-                images: selectedImages
+                images: []
             )
             let selectedDraftFromInitialResponse: MeetingMinutesModelDraft
-            if let decodedDraft = try? Self.decodeDraft(response) {
+            do {
+                let decodedDraft = try Self.decodeDraft(response)
                 selectedDraftFromInitialResponse = decodedDraft
-            } else {
+            } catch {
+                let firstError = error.localizedDescription
                 let repairPrompt = """
                 \(systemPrompt)
 
-                结构修复要求：上一版输出被截断或不是完整 JSON。本次必须输出完整、可解析且正确闭合的 JSON 对象；不得输出解释、Markdown 或代码块。在完整覆盖有效内容的前提下压缩措辞，不得删除 main_topics 要点。
+                结构修复要求：上一版输出被截断、格式不完整或字段类型错误，具体位置或原因是：\(firstError)
+                本次必须输出完整、可解析且正确闭合的 JSON 对象；请重点修正上述位置，不得输出解释、Markdown 或代码块。在完整覆盖有效内容的前提下压缩措辞，不得删除 main_topics 要点。
                 """
                 let repairedResponse = try await requestModel(
                     source: source,
                     systemPrompt: repairPrompt,
                     userText: userText,
-                    images: selectedImages
+                    images: []
                 )
                 selectedDraftFromInitialResponse = try Self.decodeDraft(repairedResponse)
             }
@@ -351,6 +383,7 @@ struct MeetingMinutesGenerator: Sendable {
                 meeting: meeting,
                 segments: segments,
                 draft: draft,
+                notes: includedNotes,
                 preparedAt: now()
             )
         )
@@ -358,7 +391,8 @@ struct MeetingMinutesGenerator: Sendable {
             document: document,
             markdown: MeetingMinutesRenderer.markdown(document, notes: renderedNotes),
             html: MeetingMinutesRenderer.html(document, notes: renderedNotes),
-            noteVisionResults: visionResults
+            noteVisionResults: visionResults,
+            noteVisionFailures: visionBatch.failures
         )
         try persist(artifact)
         return artifact
@@ -380,13 +414,14 @@ struct MeetingMinutesGenerator: Sendable {
     private func visionResultsFor(
         images: [MeetingNoteImage],
         source: ModelSource
-    ) async throws -> [MeetingNoteVisionResult] {
-        guard !images.isEmpty else { return [] }
+    ) async throws -> MeetingNoteVisionBatch {
+        guard !images.isEmpty else { return MeetingNoteVisionBatch(results: [], failures: []) }
         guard source.baseURL.hasPrefix("mock://") || source.supportsVision else {
-            throw PostprocessClientError.visionModelRequired
+            return MeetingNoteVisionBatch(results: [], failures: [])
         }
         let model = source.selectedModel ?? source.name
         var results: [MeetingNoteVisionResult] = []
+        var failures: [MeetingNoteVisionFailure] = []
         for image in images {
             if image.visionStatus == .completed,
                image.visionModel == model,
@@ -417,23 +452,34 @@ struct MeetingMinutesGenerator: Sendable {
                 continue
             }
 
-            let response = try await multimodalModelResponseGenerator(
-                source,
-                PostprocessPrompt.meetingNoteVision,
-                "请识别这张会议笔记图片：(image.filename)",
-                try Self.imageInputs([image])
-            )
-            results.append(
-                MeetingNoteVisionResult(
-                    imageID: image.id,
-                    sha256: image.sha256,
-                    text: response.trimmingCharacters(in: .whitespacesAndNewlines),
-                    model: model,
-                    promptVersion: PostprocessPrompt.meetingNoteVisionPromptVersion
+            do {
+                let response = try await multimodalModelResponseGenerator(
+                    source,
+                    PostprocessPrompt.meetingNoteVision,
+                    "请识别这张会议笔记图片：\(image.filename)",
+                    try Self.imageInputs([image])
                 )
-            )
+                let text = response.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else {
+                    failures.append(MeetingNoteVisionFailure(imageID: image.id, reason: "模型返回了空的识别结果"))
+                    continue
+                }
+                results.append(
+                    MeetingNoteVisionResult(
+                        imageID: image.id,
+                        sha256: image.sha256,
+                        text: text,
+                        model: model,
+                        promptVersion: PostprocessPrompt.meetingNoteVisionPromptVersion
+                    )
+                )
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                failures.append(MeetingNoteVisionFailure(imageID: image.id, reason: error.localizedDescription))
+            }
         }
-        return results
+        return MeetingNoteVisionBatch(results: results, failures: failures)
     }
 
     private static func imageInputs(_ images: [MeetingNoteImage]) throws -> [PostprocessImageInput] {
@@ -452,18 +498,19 @@ struct MeetingMinutesGenerator: Sendable {
         guard !notes.isEmpty else { return "" }
         let resultsByImageID = Dictionary(uniqueKeysWithValues: visionResults.map { ($0.imageID, $0) })
         var lines = [
-            "以下是本场会议中用户明确选择纳入纪要的人工笔记。人工笔记不是录音转写，必须标记其来源并与会议事实区分。"
+            "以下是本场会议中用户明确选择纳入纪要的人工笔记。人工笔记不是录音转写，必须标记其来源并与会议事实区分。",
+            "若人工笔记明确记录“参会人员”“参与人”或“出席人员”等名单，会议纪要的 participants 必须以该名单为准，只保留笔记中明确列出的人，不得从转写新增、替换或改写；角色不明确时写“待确认”。"
         ]
         for (index, content) in notes.enumerated() {
             lines.append("人工笔记 " + String(index + 1) + "：")
             let body = content.note.body.trimmingCharacters(in: .whitespacesAndNewlines)
             if !body.isEmpty {
-                lines.append("文字记录：(body)")
+                lines.append("文字记录：\(body)")
             }
             for image in content.images {
-                lines.append("图片资料：(image.filename)")
+                lines.append("图片资料：\(image.filename)")
                 if let result = resultsByImageID[image.id], !result.text.isEmpty {
-                    lines.append("图片识别信息：(result.text)")
+                    lines.append("图片识别信息：\(result.text)")
                 }
             }
             if body.isEmpty && content.images.isEmpty {
@@ -552,10 +599,7 @@ struct MeetingMinutesGenerator: Sendable {
     }
 
     static func defaultStorageDirectory() -> URL {
-        let applicationSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
-        return applicationSupport
-            .appendingPathComponent("会小纪", isDirectory: true)
+        ApplicationDataDirectory.rootURL
             .appendingPathComponent("MeetingMinutes", isDirectory: true)
     }
 
@@ -976,6 +1020,7 @@ struct MeetingMinutesGenerator: Sendable {
         meeting: Meeting,
         segments: [TranscriptSegment],
         draft: MeetingMinutesModelDraft,
+        notes: [MeetingNoteContent],
         preparedAt: Date
     ) -> MeetingMinutesDocument {
         let referenceDate = meeting.startedAt ?? meeting.createdAt
@@ -1003,13 +1048,41 @@ struct MeetingMinutesGenerator: Sendable {
             duration = "待确认"
         }
 
-        let participantDetails = draft.participants?.filter {
+        let noteParticipants = participantNames(from: notes)
+        let modelParticipantDetails = draft.participants?.filter {
             !trimmed($0.name).isEmpty
         }
-        let storedParticipantDetails = participantDetails?.isEmpty == true ? nil : participantDetails
-        let participants = participantDetails?.map(\.name).filter {
-            !trimmed($0).isEmpty
-        } ?? participantCandidates(from: segments)
+        let storedParticipantDetails: [MeetingMinutesParticipant]?
+        let participants: [String]
+        if let noteParticipants {
+            let detailsByName = (modelParticipantDetails ?? []).reduce(into: [String: MeetingMinutesParticipant]()) {
+                let name = trimmed($1.name)
+                if $0[name] == nil {
+                    $0[name] = $1
+                }
+            }
+            participants = noteParticipants
+            storedParticipantDetails = noteParticipants.map { name in
+                guard var detail = detailsByName[name] else {
+                    return MeetingMinutesParticipant(
+                        name: name,
+                        role: "待确认",
+                        evidence: "人工笔记明确名单",
+                        status: "待确认"
+                    )
+                }
+                detail.name = name
+                detail.role = nonempty(detail.role, fallback: "待确认")
+                detail.evidence = nonempty(detail.evidence, fallback: "人工笔记明确名单")
+                detail.status = nonempty(detail.status, fallback: "待确认")
+                return detail
+            }
+        } else {
+            storedParticipantDetails = modelParticipantDetails?.isEmpty == true ? nil : modelParticipantDetails
+            participants = modelParticipantDetails?.map(\.name).filter {
+                !trimmed($0).isEmpty
+            } ?? participantCandidates(from: segments)
+        }
         let suggestedMeetingName = draft.meetingTitle.flatMap(MeetingTitleGeneration.normalize)
         let generatedMeetingName = MeetingTitleGeneration.shouldReplace(title: meeting.title)
             ? suggestedMeetingName ?? meeting.title
@@ -1090,6 +1163,33 @@ struct MeetingMinutesGenerator: Sendable {
             guard seen.insert(value).inserted else { return nil }
             return value
         }
+    }
+
+    private static func participantNames(from notes: [MeetingNoteContent]) -> [String]? {
+        let labels = ["参会人员", "参会人", "参与人员", "参与人", "出席人员", "与会人员"]
+        var names: [String] = []
+        var seen = Set<String>()
+        for note in notes {
+            for rawLine in note.note.body.components(separatedBy: .newlines) {
+                let line = rawLine
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "-•*#"))
+                guard let label = labels.first(where: { line.hasPrefix($0) }) else { continue }
+                let afterLabel = line.dropFirst(label.count)
+                guard let separator = afterLabel.first, separator == "：" || separator == ":" else { continue }
+                let remainder = afterLabel.dropFirst()
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !remainder.isEmpty else { continue }
+                for rawName in remainder.split(whereSeparator: { "、，,；;".contains($0) }) {
+                    let name = String(rawName)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "。."))
+                    guard !name.isEmpty, name != "待确认", seen.insert(name).inserted else { continue }
+                    names.append(name)
+                }
+            }
+        }
+        return names.isEmpty ? nil : names
     }
 
     private static func sanitizedOwners(_ owners: [String]) -> [String] {

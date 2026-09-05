@@ -168,11 +168,12 @@ public enum DiarizationSidecarRuntimeResolver {
     }
 
     public static func sidecarEnvironmentRootURL(applicationSupportURL: URL? = nil) -> URL {
-        let baseURL = applicationSupportURL ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
-        return baseURL
-            .appendingPathComponent(supportDirectoryName, isDirectory: true)
-            .appendingPathComponent(sidecarEnvironmentDirectoryName, isDirectory: true)
+        if let applicationSupportURL {
+            return applicationSupportURL
+                .appendingPathComponent(supportDirectoryName, isDirectory: true)
+                .appendingPathComponent(sidecarEnvironmentDirectoryName, isDirectory: true)
+        }
+        return ApplicationDataDirectory.child(sidecarEnvironmentDirectoryName)
     }
 
     private static func candidateDevelopmentProjectRoots(currentDirectoryURL: URL, homeDirectoryURL: URL) -> [URL] {

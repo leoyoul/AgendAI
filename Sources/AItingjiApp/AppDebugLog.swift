@@ -107,10 +107,7 @@ struct AppDebugLogStore: Sendable {
             return FileManager.default.temporaryDirectory
                 .appendingPathComponent("ai-tingji-debug-events-\(ProcessInfo.processInfo.processIdentifier).jsonl")
         }
-        let applicationSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        return applicationSupport
-            .appendingPathComponent("会小纪", isDirectory: true)
+        return ApplicationDataDirectory.rootURL
             .appendingPathComponent("DebugLogs", isDirectory: true)
             .appendingPathComponent("events.jsonl")
     }

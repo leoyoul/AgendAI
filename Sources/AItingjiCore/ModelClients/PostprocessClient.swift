@@ -511,13 +511,19 @@ private enum ResponsesInputContent: Encodable {
                 "data:" + mimeType + ";base64," + data.base64EncodedString(),
                 forKey: .imageURL
             )
+            try container.encode("auto", forKey: .detail)
         }
     }
 
     private enum CodingKeys: String, CodingKey {
-        case type, text
+        case type, text, detail
         case imageURL = "image_url"
     }
+}
+
+private struct ResponsesInputMessage: Encodable {
+    var role = "user"
+    var content: [ResponsesInputContent]
 }
 
 private struct ChatCompletionResponse: Decodable {
@@ -542,7 +548,7 @@ private enum ResponsesInput: Encodable {
         case let .text(value):
             try container.encode(value)
         case let .parts(value):
-            try container.encode(value)
+            try container.encode([ResponsesInputMessage(content: value)])
         }
     }
 }

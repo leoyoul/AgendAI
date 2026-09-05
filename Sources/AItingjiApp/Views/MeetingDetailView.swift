@@ -294,6 +294,15 @@ struct MeetingDetailView: View {
             }
 
             if let artifact = appState.selectedMeetingMinutesArtifact {
+                if let message = appState.selectedMeetingMinutesGenerationError {
+                    Label("\(message) 当前显示的是上一次成功生成的纪要。", systemImage: "exclamationmark.triangle")
+                        .font(.callout)
+                        .foregroundStyle(.orange)
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                }
+
                 HStack(spacing: 10) {
                     Button {
                         appState.previewSelectedMeetingMinutesHTML()
@@ -317,7 +326,7 @@ struct MeetingDetailView: View {
                 }
 
                 ScrollView {
-                    Text(artifact.markdown)
+                    Text(artifact.displayMarkdown)
                         .font(.system(.body, design: .monospaced))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -910,6 +919,15 @@ private struct MeetingNoteImageThumbnail: View {
             Label(image.visionStatus.displayName, systemImage: image.visionStatus.systemImage)
                 .font(.caption2)
                 .foregroundStyle(image.visionStatus == .failed ? .red : .secondary)
+
+            if image.visionStatus == .failed,
+               let reason = image.visionError?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !reason.isEmpty {
+                Text(reason)
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 }

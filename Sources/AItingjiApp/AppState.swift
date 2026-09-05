@@ -245,11 +245,6 @@ final class AppState {
     }
 
     var selectedMeetingMinutesVisionWarning: String? {
-        guard selectedMeetingHasIncludedImages else { return nil }
-        guard let source = defaultModelSource(type: .agent) else { return nil }
-        guard source.supportsVision else {
-            return "本场包含纳入纪要的图片笔记，请在 Agent 模型配置中开启“支持视觉输入”，并使用多模态模型。"
-        }
         return nil
     }
 
@@ -697,6 +692,13 @@ final class AppState {
     }
 
     private func cancelMeetingWorkForExternalArchive(meetingID: Meeting.ID) {
+        if meetingMinutesGenerationTasks[meetingID] != nil {
+            let imagesByNote = Dictionary(grouping: noteImagesByMeeting[meetingID, default: []], by: \.noteID)
+            let notes = notesByMeeting[meetingID, default: []].map {
+                MeetingNoteContent(note: $0, images: imagesByNote[$0.id, default: []])
+            }
+            setMeetingNoteImageVisionStatus(notes, status: .pending)
+        }
         postprocessingTasks[meetingID]?.cancel()
         postprocessingTasks.removeValue(forKey: meetingID)
         meetingMinutesGenerationTasks[meetingID]?.cancel()
@@ -964,6 +966,32 @@ final class AppState {
         }
     }
 
+    private func persistMeetingNoteVisionFailures(_ failures: [MeetingNoteVisionFailure]) {
+        guard let store else { return }
+        for failure in failures {
+            do {
+                try store.updateMeetingNoteImageVision(
+                    id: failure.imageID,
+                    status: .failed,
+                    text: "",
+                    error: failure.reason
+                )
+                for meetingID in noteImagesByMeeting.keys {
+                    guard let index = noteImagesByMeeting[meetingID]?.firstIndex(where: { $0.id == failure.imageID }) else {
+                        continue
+                    }
+                    noteImagesByMeeting[meetingID]![index].visionStatus = .failed
+                    noteImagesByMeeting[meetingID]![index].visionText = ""
+                    noteImagesByMeeting[meetingID]![index].visionUpdatedAt = Date()
+                    noteImagesByMeeting[meetingID]![index].visionError = failure.reason
+                    break
+                }
+            } catch {
+                statusMessage = "图片识别失败原因保存失败：\(error.localizedDescription)"
+            }
+        }
+    }
+
     private func setMeetingNoteImageVisionStatus(
         _ notes: [MeetingNoteContent],
         status: MeetingNoteVisionStatus,
@@ -996,15 +1024,13 @@ final class AppState {
 
     private func invalidateMeetingMinutesArtifact(for meetingID: Meeting.ID) {
         guard meetingMinutesArtifacts[meetingID] != nil else { return }
-        meetingMinutesArtifacts.removeValue(forKey: meetingID)
-        meetingMinutesGenerator.removeCachedArtifact(meetingID: meetingID)
         updateMeeting(id: meetingID) {
             if $0.status != .processing {
                 $0.minutesGenerationError = "会议笔记已修改，请重新生成会议纪要。"
             }
         }
         if selectedMeetingID == meetingID {
-            statusMessage = "会议笔记已修改，原会议纪要已失效，请重新生成。"
+            statusMessage = "会议笔记已修改，已保留原始会议纪要；重新生成后会更新内容。"
         }
     }
 
@@ -1908,7 +1934,9 @@ final class AppState {
             )
             return
         }
-        setMeetingNoteImageVisionStatus(notes, status: .processing)
+        if source.supportsVision {
+            setMeetingNoteImageVisionStatus(notes, status: .processing)
+        }
         guard generatingMeetingMinutesIDs.insert(meetingID).inserted else {
             return
         }
@@ -1942,10 +1970,12 @@ final class AppState {
                 guard !Task.isCancelled,
                       let currentMeeting = self.meetings.first(where: { $0.id == meetingID }),
                       !currentMeeting.isArchived else {
+                    self.setMeetingNoteImageVisionStatus(notes, status: .pending)
                     return
                 }
                 self.meetingMinutesArtifacts[meetingID] = artifact
                 self.persistMeetingNoteVisionResults(artifact.noteVisionResults)
+                self.persistMeetingNoteVisionFailures(artifact.noteVisionFailures)
                 _ = self.setPostprocessRecoveryPending(false, meetingID: meetingID)
                 self.updateMeeting(id: meetingID) {
                     $0.status = .done
@@ -1957,15 +1987,19 @@ final class AppState {
                         artifact: artifact
                     )
                     let titleMessage = generatedTitle.map { "，标题已更新为“\($0)”" } ?? ""
-                    self.statusMessage = "会议纪要已生成\(titleMessage)，可预览或导出 MD、HTML。"
+                    let imageMessage = artifact.noteVisionFailures.isEmpty
+                        ? ""
+                        : "；\(artifact.noteVisionFailures.count) 张图片识别失败，已保留原因且未影响纪要生成"
+                    self.statusMessage = "会议纪要已生成\(titleMessage)\(imageMessage)，可预览或导出 MD、HTML。"
                 } catch {
                     self.statusMessage = "会议纪要已生成，但标题更新失败：\(error.localizedDescription)。"
                 }
                 self.appendDebugLog(category: "纪要", message: "手动纪要生成完成。", meetingID: meetingID)
             } catch is CancellationError {
+                self.setMeetingNoteImageVisionStatus(notes, status: .pending)
                 self.appendDebugLog(category: "纪要", message: "手动纪要生成已取消。", meetingID: meetingID)
             } catch {
-                self.setMeetingNoteImageVisionStatus(notes, status: .failed, error: error.localizedDescription)
+                self.setMeetingNoteImageVisionStatus(notes, status: .pending)
                 self.markStandardMinutesGenerationFailed(
                     meetingID: meetingID,
                     error: error,
@@ -3977,10 +4011,7 @@ final class AppState {
     }
 
     private static var pendingTranscriptionRootURL: URL {
-        let applicationSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
-        return applicationSupport
-            .appendingPathComponent("会小纪", isDirectory: true)
+        ApplicationDataDirectory.rootURL
             .appendingPathComponent("PendingASR", isDirectory: true)
     }
 
@@ -3990,10 +4021,7 @@ final class AppState {
     }
 
     private static var meetingAgentSessionRootURL: URL {
-        let applicationSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
-        return applicationSupport
-            .appendingPathComponent("会小纪", isDirectory: true)
+        ApplicationDataDirectory.rootURL
             .appendingPathComponent("PiSessions", isDirectory: true)
     }
 
@@ -4010,10 +4038,7 @@ final class AppState {
     }
 
     private func meetingAudioDirectoryURL(meetingID: Meeting.ID) -> URL {
-        let applicationSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        return applicationSupport
-            .appendingPathComponent("会小纪", isDirectory: true)
+        ApplicationDataDirectory.rootURL
             .appendingPathComponent("Meetings", isDirectory: true)
             .appendingPathComponent(meetingID, isDirectory: true)
     }
@@ -4246,7 +4271,9 @@ final class AppState {
             return meeting.captureSource != .imported
         }
 
-        setMeetingNoteImageVisionStatus(notes, status: .processing)
+        if source.supportsVision {
+            setMeetingNoteImageVisionStatus(notes, status: .processing)
+        }
 
         do {
             let artifact = try await generateStandardMeetingMinutes(
@@ -4258,10 +4285,12 @@ final class AppState {
             )
             guard !Task.isCancelled,
                   meetings.contains(where: { $0.id == meetingID }) else {
+                setMeetingNoteImageVisionStatus(notes, status: .pending)
                 return false
             }
             meetingMinutesArtifacts[meetingID] = artifact
             persistMeetingNoteVisionResults(artifact.noteVisionResults)
+            persistMeetingNoteVisionFailures(artifact.noteVisionFailures)
             updateMeeting(id: meetingID) {
                 $0.status = .done
                 $0.minutesGenerationError = nil
@@ -4283,13 +4312,17 @@ final class AppState {
                     statusMessage = "会议纪要已生成，但标题更新失败：\(titleUpdateError.localizedDescription)。"
                 } else {
                     let titleMessage = generatedTitle.map { "，标题已更新为“\($0)”" } ?? ""
-                    statusMessage = "会议纪要已生成\(titleMessage)，可导出 MD 或 HTML。"
+                    let imageMessage = artifact.noteVisionFailures.isEmpty
+                        ? ""
+                        : "；\(artifact.noteVisionFailures.count) 张图片识别失败，已保留原因且未影响纪要生成"
+                    statusMessage = "会议纪要已生成\(titleMessage)\(imageMessage)，可导出 MD 或 HTML。"
                 }
             }
         } catch is CancellationError {
+            setMeetingNoteImageVisionStatus(notes, status: .pending)
             return false
         } catch {
-            setMeetingNoteImageVisionStatus(notes, status: .failed, error: error.localizedDescription)
+            setMeetingNoteImageVisionStatus(notes, status: .pending)
             markStandardMinutesGenerationFailed(meetingID: meetingID, error: error, source: source, mode: "自动")
             return false
         }

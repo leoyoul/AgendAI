@@ -165,10 +165,7 @@ struct MeetingAnalysisGenerator: Sendable {
     }
 
     static func defaultStorageDirectory() -> URL {
-        let applicationSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-            .first ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
-        return applicationSupport
-            .appendingPathComponent("会小纪", isDirectory: true)
+        ApplicationDataDirectory.rootURL
             .appendingPathComponent("MeetingAnalysis", isDirectory: true)
     }
 

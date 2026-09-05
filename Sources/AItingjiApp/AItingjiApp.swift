@@ -1,3 +1,4 @@
+import AItingjiCore
 import SwiftUI
 
 @main
@@ -6,7 +7,7 @@ struct AItingjiApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
-        WindowGroup("AgendAI 会小纪") {
+        WindowGroup(Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "AgendAI 会小纪") {
             RootView()
                 .environment(appState)
                 .frame(minWidth: 980, minHeight: 680)

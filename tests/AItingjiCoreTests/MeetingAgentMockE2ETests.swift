@@ -1,6 +1,5 @@
 import AItingjiCore
 import CryptoKit
-import Darwin
 import Foundation
 import Testing
 
@@ -68,7 +67,6 @@ struct MeetingAgentMockE2ETests {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         let entrypoint = repositoryRoot.appendingPathComponent("Tools/tinglan_agentd/src/index.mjs")
-        let port = try unusedLoopbackPort()
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = ["node", entrypoint.path]
@@ -77,13 +75,23 @@ struct MeetingAgentMockE2ETests {
         environment["HOME"] = home.path
         environment["TINGLAN_AGENT_DATA_ROOT"] = agentRoot.path
         environment["TINGLAN_AGENT_HOST"] = "127.0.0.1"
-        environment["TINGLAN_AGENT_PORT"] = String(port)
+        environment["TINGLAN_AGENT_PORT"] = "0"
         environment["TINGLAN_AGENT_INPUT_ROOTS"] = attachmentRoot.path
         environment["TINGLAN_AGENT_PROVIDER"] = "mock"
         environment["TINGLAN_DB_PATH"] = root.appendingPathComponent("must-not-exist.sqlite").path
         process.environment = environment
-        process.standardOutput = Pipe()
-        process.standardError = Pipe()
+        let stdoutURL = root.appendingPathComponent("agentd.stdout.log")
+        let stderrURL = root.appendingPathComponent("agentd.stderr.log")
+        fileManager.createFile(atPath: stdoutURL.path, contents: nil)
+        fileManager.createFile(atPath: stderrURL.path, contents: nil)
+        let stdoutHandle = try FileHandle(forWritingTo: stdoutURL)
+        let stderrHandle = try FileHandle(forWritingTo: stderrURL)
+        defer {
+            try? stdoutHandle.close()
+            try? stderrHandle.close()
+        }
+        process.standardOutput = stdoutHandle
+        process.standardError = stderrHandle
         try process.run()
         defer {
             if process.isRunning {
@@ -92,17 +100,22 @@ struct MeetingAgentMockE2ETests {
             }
         }
 
-        let baseURL = try #require(URL(string: "http://127.0.0.1:\(port)"))
         let tokenURL = agentRoot.appendingPathComponent("api-token")
         let sessionConfiguration = URLSessionConfiguration.ephemeral
         sessionConfiguration.timeoutIntervalForRequest = 2
         sessionConfiguration.timeoutIntervalForResource = 5
         let session = URLSession(configuration: sessionConfiguration)
-        let token = try await waitUntilReady(baseURL: baseURL, tokenURL: tokenURL, session: session)
+        let readiness = try await waitUntilReady(
+            process: process,
+            stdoutURL: stdoutURL,
+            stderrURL: stderrURL,
+            tokenURL: tokenURL,
+            session: session
+        )
         let gateway = MeetingAgentGatewayClient(
-            baseURL: baseURL,
+            baseURL: readiness.baseURL,
             session: session,
-            tokenProvider: { token }
+            tokenProvider: { readiness.token }
         )
 
         let databaseURL = tinglanRoot.appendingPathComponent("ai-tingji.sqlite")
@@ -190,21 +203,55 @@ struct MeetingAgentMockE2ETests {
         #expect(sanitizedRequest.contains("attachments/需求说明.txt"))
     }
 
-    private func waitUntilReady(baseURL: URL, tokenURL: URL, session: URLSession) async throws -> String {
+    private func waitUntilReady(
+        process: Process,
+        stdoutURL: URL,
+        stderrURL: URL,
+        tokenURL: URL,
+        session: URLSession
+    ) async throws -> (baseURL: URL, token: String) {
         let deadline = Date().addingTimeInterval(10)
         while Date() < deadline {
-            if let token = try? String(contentsOf: tokenURL, encoding: .utf8)
+            let stdout = (try? String(contentsOf: stdoutURL, encoding: .utf8)) ?? ""
+            if let baseURL = agentBaseURL(from: stdout),
+               let token = try? String(contentsOf: tokenURL, encoding: .utf8)
                 .trimmingCharacters(in: .whitespacesAndNewlines),
                !token.isEmpty,
                let healthURL = URL(string: "/healthz", relativeTo: baseURL),
                let (_, response) = try? await session.data(from: healthURL),
                (response as? HTTPURLResponse)?.statusCode == 200
             {
-                return token
+                return (baseURL, token)
+            }
+            if !process.isRunning {
+                throw MeetingAgentMockE2EError.startupFailed(
+                    diagnostics(process: process, stdoutURL: stdoutURL, stderrURL: stderrURL)
+                )
             }
             try await Task.sleep(for: .milliseconds(50))
         }
-        throw MeetingAgentMockE2EError.timeout("tinglan-agentd 未在 10 秒内就绪")
+        throw MeetingAgentMockE2EError.timeout(
+            "tinglan-agentd 未在 10 秒内就绪。\n" + diagnostics(
+                process: process,
+                stdoutURL: stdoutURL,
+                stderrURL: stderrURL
+            )
+        )
+    }
+
+    private func agentBaseURL(from stdout: String) -> URL? {
+        guard let line = stdout.split(separator: "\n").last(where: { $0.contains("tinglan-agentd listening on ") }),
+              let marker = line.range(of: "http://") else {
+            return nil
+        }
+        return URL(string: String(line[marker.lowerBound...]).trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private func diagnostics(process: Process, stdoutURL: URL, stderrURL: URL) -> String {
+        let stdout = (try? String(contentsOf: stdoutURL, encoding: .utf8)) ?? ""
+        let stderr = (try? String(contentsOf: stderrURL, encoding: .utf8)) ?? ""
+        let exit = process.isRunning ? "仍在运行" : "退出码 \(process.terminationStatus)"
+        return "进程状态：\(exit)\nstdout:\n\(stdout)\nstderr:\n\(stderr)"
     }
 
     private func waitForCompletion(
@@ -226,38 +273,20 @@ struct MeetingAgentMockE2ETests {
         throw MeetingAgentMockE2EError.timeout("Agent 作业未在 10 秒内完成")
     }
 
-    private func unusedLoopbackPort() throws -> UInt16 {
-        let descriptor = socket(AF_INET, SOCK_STREAM, 0)
-        guard descriptor >= 0 else { throw MeetingAgentMockE2EError.socket }
-        defer { Darwin.close(descriptor) }
-        var address = sockaddr_in()
-        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
-        address.sin_family = sa_family_t(AF_INET)
-        address.sin_port = 0
-        address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
-        let bindResult = withUnsafePointer(to: &address) { pointer in
-            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                Darwin.bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
-            }
-        }
-        guard bindResult == 0 else { throw MeetingAgentMockE2EError.socket }
-        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
-        let nameResult = withUnsafeMutablePointer(to: &address) { pointer in
-            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                getsockname(descriptor, $0, &length)
-            }
-        }
-        guard nameResult == 0 else { throw MeetingAgentMockE2EError.socket }
-        return UInt16(bigEndian: address.sin_port)
-    }
-
     private func sha256(_ data: Data) -> String {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 }
 
-private enum MeetingAgentMockE2EError: Error {
-    case socket
+private enum MeetingAgentMockE2EError: Error, LocalizedError {
     case timeout(String)
+    case startupFailed(String)
     case remoteFailed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case let .timeout(message), let .startupFailed(message), let .remoteFailed(message):
+            message
+        }
+    }
 }

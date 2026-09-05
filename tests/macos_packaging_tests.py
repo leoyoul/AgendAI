@@ -61,6 +61,29 @@ class MacOSPackagingTests(unittest.TestCase):
             info["NSAppTransportSecurity"]["NSAllowsArbitraryLoads"]
         )
 
+    def test_isolated_test_app_has_independent_identity_and_data_directory(self) -> None:
+        with (self.repo / "Packaging" / "AItingjiTestApp-Info.plist").open("rb") as file:
+            info = plistlib.load(file)
+
+        self.assertEqual(info["CFBundleDisplayName"], "AgendAI 会小纪 测试版")
+        self.assertEqual(info["CFBundleIdentifier"], "com.local.aitingji.test")
+        self.assertEqual(info["CFBundleShortVersionString"], "0.1.1")
+        self.assertEqual(info["CFBundleVersion"], "2")
+        self.assertEqual(info["AgendAIDataDirectoryName"], "会小纪测试版")
+
+    def test_test_app_scripts_do_not_target_the_production_app(self) -> None:
+        package_script = (self.repo / "scripts" / "package_macos_test_app.sh").read_text()
+        install_script = (self.repo / "scripts" / "install_macos_test_app.sh").read_text()
+        data_script = (self.repo / "scripts" / "prepare_macos_test_data.sh").read_text()
+
+        self.assertIn('DIST_DIR="$ROOT_DIR/dist-test"', package_script)
+        self.assertIn('BUNDLE_ID="com.local.aitingji.test"', package_script)
+        self.assertIn('TARGET_APP="/Applications/$APP_NAME.app"', install_script)
+        self.assertIn('TARGET_ROOT="$HOME/Library/Application Support/会小纪测试版"', data_script)
+        self.assertIn(".backup", data_script)
+        self.assertIn("audio_file_path = NULL", data_script)
+        self.assertNotIn('TARGET_APP="/Applications/AgendAI 会小纪.app"', install_script)
+
 
 if __name__ == "__main__":
     unittest.main()
