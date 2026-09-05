@@ -678,6 +678,10 @@ final class AppState {
         }
     }
 
+    func recordUpdateLog(_ message: String) {
+        appendDebugLog(category: "更新", message: message)
+    }
+
     private func appendDebugLog(category: String, message: String, meetingID: Meeting.ID? = nil) {
         let entry = AppDebugLogEntry(category: category, message: message, meetingID: meetingID)
         do {

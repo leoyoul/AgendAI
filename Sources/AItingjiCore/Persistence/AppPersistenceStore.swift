@@ -108,20 +108,47 @@ public final class AppPersistenceStore: @unchecked Sendable {
     private var currentAvailability: AppPersistenceAvailability = .available
 
     /// 保持既有 `throws` 初始化 API；需要无异常分支时请使用 `open(path:apiKeyStore:)`。
-    public init(
+    public convenience init(
         path: String = AppPersistenceStore.defaultDatabasePath(),
-        apiKeyStore: any ModelSourceAPIKeyStore = KeychainModelSourceAPIKeyStore()
+        apiKeyStore: any ModelSourceAPIKeyStore = KeychainModelSourceAPIKeyStore(),
+        appVersion: String = AppPersistenceStore.currentAppVersion(),
+        upgradeBackupDirectory: URL? = nil
+    ) throws {
+        try self.init(
+            path: path,
+            apiKeyStore: apiKeyStore,
+            appVersion: appVersion,
+            upgradeBackupDirectory: upgradeBackupDirectory,
+            upgradeBackupOperation: UpgradeBackup.createSQLiteOnlineBackup
+        )
+    }
+
+    init(
+        path: String,
+        apiKeyStore: any ModelSourceAPIKeyStore,
+        appVersion: String,
+        upgradeBackupDirectory: URL?,
+        upgradeBackupOperation: @escaping UpgradeBackup.BackupOperation
     ) throws {
         do {
             let url = URL(fileURLWithPath: path)
             let directory = url.deletingLastPathComponent()
             let directoryAlreadyExisted = FileManager.default.fileExists(atPath: directory.path)
+            let databaseExistedBeforeOpening = FileManager.default.fileExists(atPath: url.path)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             try Self.migrateLegacyDefaultDatabaseIfNeeded(destinationURL: url)
             // 只收紧本应用目录或本次新建目录，绝不修改调用者传入的共享父目录（例如 /tmp）。
             if !directoryAlreadyExisted || ApplicationDataDirectory.isManagedRoot(directory) {
                 try Self.restrictPermissions(of: directory, to: 0o700)
             }
+
+            let upgradeBackup = UpgradeBackup(
+                databaseURL: url,
+                directory: upgradeBackupDirectory,
+                currentVersion: appVersion,
+                backupOperation: upgradeBackupOperation
+            )
+            try upgradeBackup.backupIfNeeded(databaseExistedBeforeOpening: databaseExistedBeforeOpening)
 
             let database = try Database(path: path)
             try Self.restrictPermissions(of: url, to: 0o600)
@@ -146,6 +173,7 @@ public final class AppPersistenceStore: @unchecked Sendable {
             meetingAgentResults = MeetingAgentResultRepository(database: database)
             meetingTodos = MeetingTodoRepository(database: database)
             meetingAgentChat = MeetingAgentChatRepository(database: database)
+            try upgradeBackup.recordCurrentVersion()
         } catch {
             throw Self.initializationError(from: error)
         }
@@ -153,10 +181,17 @@ public final class AppPersistenceStore: @unchecked Sendable {
 
     public static func open(
         path: String = AppPersistenceStore.defaultDatabasePath(),
-        apiKeyStore: any ModelSourceAPIKeyStore = KeychainModelSourceAPIKeyStore()
+        apiKeyStore: any ModelSourceAPIKeyStore = KeychainModelSourceAPIKeyStore(),
+        appVersion: String = AppPersistenceStore.currentAppVersion(),
+        upgradeBackupDirectory: URL? = nil
     ) -> AppPersistenceStoreOpenResult {
         do {
-            return .available(try AppPersistenceStore(path: path, apiKeyStore: apiKeyStore))
+            return .available(try AppPersistenceStore(
+                path: path,
+                apiKeyStore: apiKeyStore,
+                appVersion: appVersion,
+                upgradeBackupDirectory: upgradeBackupDirectory
+            ))
         } catch let error as AppPersistenceStoreError {
             return .unavailable(error)
         } catch {
@@ -178,6 +213,14 @@ public final class AppPersistenceStore: @unchecked Sendable {
         ApplicationDataDirectory.rootURL
             .appendingPathComponent("ai-tingji.sqlite")
             .path
+    }
+
+    public static func currentAppVersion(bundle: Bundle = .main) -> String {
+        let shortVersion = ((bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let build = ((bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return "\(shortVersion.isEmpty ? "0" : shortVersion) (\(build.isEmpty ? "0" : build))"
     }
 
     static func migrateLegacyDatabaseIfNeeded(destinationURL: URL, legacyDatabaseURL: URL) throws {

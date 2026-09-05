@@ -61,14 +61,23 @@ class MacOSPackagingTests(unittest.TestCase):
             info["NSAppTransportSecurity"]["NSAllowsArbitraryLoads"]
         )
 
+    def test_production_app_has_v012_release_identity(self) -> None:
+        with (self.repo / "Packaging" / "AItingjiApp-Info.plist").open("rb") as file:
+            info = plistlib.load(file)
+
+        self.assertEqual(info["CFBundleIdentifier"], "com.local.aitingji")
+        self.assertEqual(info["CFBundleShortVersionString"], "0.1.2")
+        self.assertEqual(info["CFBundleVersion"], "3")
+        self.assertNotIn("AgendAIDataDirectoryName", info)
+
     def test_isolated_test_app_has_independent_identity_and_data_directory(self) -> None:
         with (self.repo / "Packaging" / "AItingjiTestApp-Info.plist").open("rb") as file:
             info = plistlib.load(file)
 
         self.assertEqual(info["CFBundleDisplayName"], "AgendAI 会小纪 测试版")
         self.assertEqual(info["CFBundleIdentifier"], "com.local.aitingji.test")
-        self.assertEqual(info["CFBundleShortVersionString"], "0.1.1")
-        self.assertEqual(info["CFBundleVersion"], "2")
+        self.assertEqual(info["CFBundleShortVersionString"], "0.1.2")
+        self.assertEqual(info["CFBundleVersion"], "3")
         self.assertEqual(info["AgendAIDataDirectoryName"], "会小纪测试版")
 
     def test_test_app_scripts_do_not_target_the_production_app(self) -> None:
