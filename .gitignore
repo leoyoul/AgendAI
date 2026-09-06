@@ -21,7 +21,8 @@ dist/
 dist-test/
 dist-debug-package/
 output/
-docs/
+docs/*
+!docs/appcast.xml
 .voiceprint-py312/
 Tools/tinglan_mcp/node_modules/
 Tools/tinglan_agentd/node_modules/

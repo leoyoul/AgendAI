@@ -14,6 +14,9 @@ let package = Package(
         .executable(name: "AItingjiCaptureSmoke", targets: ["AItingjiCaptureSmoke"]),
         .executable(name: "AItingjiLiveSmoke", targets: ["AItingjiLiveSmoke"])
     ],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle.git", exact: "2.9.6")
+    ],
     targets: [
         .target(
             name: "AItingjiCore",
@@ -25,7 +28,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "AItingjiApp",
-            dependencies: ["AItingjiCore"],
+            dependencies: [
+                "AItingjiCore",
+                .product(name: "Sparkle", package: "Sparkle")
+            ],
             path: "Sources/AItingjiApp"
         ),
         .executableTarget(

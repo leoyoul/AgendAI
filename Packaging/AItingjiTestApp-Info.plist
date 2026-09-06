@@ -15,9 +15,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.2</string>
+    <string>0.1.3</string>
     <key>CFBundleVersion</key>
-    <string>3</string>
+    <string>4</string>
     <key>AgendAIDataDirectoryName</key>
     <string>会小纪测试版</string>
     <key>LSMinimumSystemVersion</key>
@@ -33,5 +33,17 @@
     <string>会小纪测试版需要屏幕录制权限，用于隔离测试屏幕和电脑音频采集。</string>
     <key>NSAudioCaptureUsageDescription</key>
     <string>会小纪测试版需要系统音频捕获权限，用于隔离测试电脑音频采集。</string>
+	<key>SUAllowsInsecureUpdates</key>
+	<true/>
+	<key>SUEnableAutomaticChecks</key>
+	<false/>
+	<key>SUPublicEDKey</key>
+	<string>s+But0SjKoHF/PLDWz9cV/CNZgityVEOC+TCVn2DTSk=</string>
+	<key>SURequireSignedFeed</key>
+	<true/>
+	<key>SUSignedFeedFailureExpirationInterval</key>
+	<integer>0</integer>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
 </dict>
 </plist>

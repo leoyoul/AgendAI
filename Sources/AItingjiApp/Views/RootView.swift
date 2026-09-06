@@ -9,6 +9,7 @@ struct RootView: View {
     var body: some View {
         NavigationSplitView {
             AppSidebarView(
+                updateCoordinator: updateCoordinator,
                 selectedDestination: navigation.destination,
                 onSelectDestination: selectDestination,
                 onSelectMeeting: openMeeting,
@@ -48,36 +49,15 @@ struct RootView: View {
             _ = appState.selectMeeting(meetingID)
         }
         .task {
-            await updateCoordinator.checkAutomatically(log: appState.recordUpdateLog)
+            updateCoordinator.start(log: appState.recordUpdateLog)
         }
-        .alert(item: $updateCoordinator.notice) { notice in
-            alert(for: notice)
-        }
-    }
-
-    private func alert(for notice: AppUpdateNotice) -> Alert {
-        switch notice {
-        case .updateAvailable(let currentVersion, let release):
-            Alert(
-                title: Text(verbatim: "发现新版本 \(release.version)"),
-                message: Text(verbatim: "当前版本为 \(currentVersion)。下载后请退出会小纪，再用新版本替换旧应用；会议和账户数据会继续保留。"),
-                primaryButton: .default(Text("前往下载")) {
-                    updateCoordinator.openRelease(release, log: appState.recordUpdateLog)
-                },
-                secondaryButton: .cancel(Text("稍后"))
-            )
-        case .upToDate(let currentVersion):
-            Alert(
-                title: Text("已是最新版"),
-                message: Text(verbatim: "当前版本为 \(currentVersion)。"),
-                dismissButton: .default(Text("好"))
-            )
-        case .failure(let message):
-            Alert(
-                title: Text("检查更新失败"),
-                message: Text(verbatim: message),
-                dismissButton: .default(Text("好"))
-            )
+        .alert("请将会小纪安装到“应用程序”", isPresented: $updateCoordinator.showInstallationPrompt) {
+            Button("打开应用程序文件夹") {
+                updateCoordinator.revealCurrentAppAndApplications()
+            }
+            Button("稍后", role: .cancel) {}
+        } message: {
+            Text("将会小纪拖到“应用程序”并选择“替换”后，即可接收应用内更新。会议和账户数据不会被替换。")
         }
     }
 

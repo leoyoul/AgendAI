@@ -22,11 +22,9 @@ struct AItingjiApp: App {
         .commands {
             CommandGroup(after: .appInfo) {
                 Button(updateCoordinator.isChecking ? "正在检查更新…" : "检查更新…") {
-                    Task {
-                        await updateCoordinator.checkManually(log: appState.recordUpdateLog)
-                    }
+                    updateCoordinator.checkForUpdatesManually(log: appState.recordUpdateLog)
                 }
-                .disabled(updateCoordinator.isChecking)
+                .disabled(updateCoordinator.isChecking || updateCoordinator.installationPromptRequired || !updateCoordinator.updatesAreEnabled)
             }
         }
     }

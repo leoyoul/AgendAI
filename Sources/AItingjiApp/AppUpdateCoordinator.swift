@@ -1,110 +1,268 @@
-import AItingjiCore
 import AppKit
 import Foundation
 import Observation
+import Sparkle
 
-enum AppUpdateCheckTrigger: Sendable {
-    case automatic
-    case manual
+enum AppInstallationLocationPolicy {
+    static let productionBundleIdentifier = "com.local.aitingji"
+    static let testBundleIdentifier = "com.local.aitingji.test"
+    static let applicationsDirectory = URL(fileURLWithPath: "/Applications", isDirectory: true)
+
+    static func requiresInstallationPrompt(
+        bundleIdentifier: String?,
+        bundleURL: URL,
+        environment: [String: String]
+    ) -> Bool {
+        guard bundleIdentifier == productionBundleIdentifier,
+              !isTestProcess(environment: environment) else {
+            return false
+        }
+        return bundleURL.standardizedFileURL.deletingLastPathComponent() != applicationsDirectory
+    }
+
+    static func isTestProcess(environment: [String: String]) -> Bool {
+        environment["XCTestConfigurationFilePath"] != nil
+            || environment["XCTestBundlePath"] != nil
+    }
+
+    static func testFeedURL(
+        bundleIdentifier: String?,
+        environment: [String: String]
+    ) -> URL? {
+        guard bundleIdentifier == testBundleIdentifier,
+              let rawValue = environment["TINGLAN_SPARKLE_FEED_URL"],
+              !rawValue.isEmpty,
+              let url = URL(string: rawValue) else {
+            return nil
+        }
+        return url
+    }
 }
 
-enum AppUpdateNotice: Identifiable, Equatable {
-    case updateAvailable(currentVersion: String, release: GitHubRelease)
-    case upToDate(currentVersion: String)
-    case failure(message: String)
+@MainActor
+protocol AppUpdateDriving: AnyObject {
+    var canCheckForUpdates: Bool { get }
+    var eventHandler: ((AppUpdateDriverEvent) -> Void)? { get set }
 
-    var id: String {
-        switch self {
-        case .updateAvailable: "update-available"
-        case .upToDate: "up-to-date"
-        case .failure: "failure"
+    func start() throws
+    func checkForUpdates()
+    func checkForUpdatesInBackground()
+}
+
+enum AppUpdateDriverEvent: Equatable {
+    case updateAvailable(version: String)
+    case upToDate
+    case failed(message: String)
+}
+
+@MainActor
+final class SparkleUpdateDriver: NSObject, AppUpdateDriving, SPUUpdaterDelegate {
+    var eventHandler: ((AppUpdateDriverEvent) -> Void)?
+
+    private let feedURLOverride: URL?
+    private lazy var controller = SPUStandardUpdaterController(
+        startingUpdater: false,
+        updaterDelegate: self,
+        userDriverDelegate: nil
+    )
+
+    init(feedURLOverride: URL?) {
+        self.feedURLOverride = feedURLOverride
+    }
+
+    var canCheckForUpdates: Bool {
+        controller.updater.canCheckForUpdates
+    }
+
+    func start() throws {
+        // The standard Sparkle UI remains intact, but Skip is cleared on launch.
+        // It can therefore never suppress a future automatic check permanently.
+        clearSkippedVersions()
+        if feedURLOverride != nil {
+            controller.updater.automaticallyChecksForUpdates = true
         }
+
+        try controller.updater.start()
+    }
+
+    func checkForUpdates() {
+        controller.checkForUpdates(nil)
+    }
+
+    func checkForUpdatesInBackground() {
+        controller.updater.checkForUpdatesInBackground()
+    }
+
+    func feedURLString(for updater: SPUUpdater) -> String? {
+        feedURLOverride?.absoluteString
+    }
+
+    func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
+        eventHandler?(.updateAvailable(version: item.displayVersionString))
+    }
+
+    func updaterDidNotFindUpdate(_ updater: SPUUpdater, error: Error) {
+        eventHandler?(.upToDate)
+    }
+
+    func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
+        guard let event = Self.abortEvent(for: error) else { return }
+        eventHandler?(event)
+    }
+
+    static func abortEvent(for error: Error) -> AppUpdateDriverEvent? {
+        let nsError = error as NSError
+        guard nsError.domain == SUSparkleErrorDomain else {
+            return .failed(message: nsError.localizedDescription)
+        }
+        guard !expectedAbortErrorCodes.contains(nsError.code) else {
+            return nil
+        }
+        return .failed(message: nsError.localizedDescription)
+    }
+
+    private static let expectedAbortErrorCodes: Set<Int> = [
+        Int(SUError.noUpdateError.rawValue),
+        Int(SUError.installationCanceledError.rawValue),
+        Int(SUError.installationAuthorizeLaterError.rawValue)
+    ]
+
+    private func clearSkippedVersions() {
+        let defaults = UserDefaults.standard
+        ["SUSkippedVersion", "SUSkippedMajorVersion", "SUSkippedMajorSubreleaseVersion"]
+            .forEach(defaults.removeObject(forKey:))
+    }
+}
+
+enum AppUpdateBrandState: Equatable {
+    case current(version: String)
+    case updateAvailable(currentVersion: String, latestVersion: String)
+
+    var versionLabel: String {
+        switch self {
+        case .current(let version): "v\(version)"
+        case .updateAvailable(_, let latestVersion): "v\(latestVersion) 可更新"
+        }
+    }
+
+    var hasUpdate: Bool {
+        if case .updateAvailable = self { return true }
+        return false
     }
 }
 
 @MainActor
 @Observable
 final class AppUpdateCoordinator {
-    typealias CheckOperation = @Sendable (String) async throws -> UpdateCheckResult
-    typealias URLOpener = @MainActor (URL) -> Bool
+    typealias Log = @MainActor (String) -> Void
+    typealias InstallationRevealAction = @MainActor (URL, URL) -> Void
 
-    private let currentVersion: String
-    @ObservationIgnored private let checkOperation: CheckOperation
-    @ObservationIgnored private let openURL: URLOpener
-    private var didStartAutomaticCheck = false
+    let currentVersion: String
+    let installationPromptRequired: Bool
+    let updatesAreEnabled: Bool
+    @ObservationIgnored private let bundleURL: URL
+    @ObservationIgnored private let driver: AppUpdateDriving
+    @ObservationIgnored private let revealInstallationLocations: InstallationRevealAction
+    @ObservationIgnored private var log: Log?
+    private var didStart = false
 
     private(set) var isChecking = false
-    var notice: AppUpdateNotice?
+    private(set) var brandState: AppUpdateBrandState
+    var showInstallationPrompt = false
+
+    convenience init() {
+        self.init(
+            bundleIdentifier: Bundle.main.bundleIdentifier,
+            bundleURL: Bundle.main.bundleURL,
+            currentVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0",
+            environment: ProcessInfo.processInfo.environment
+        )
+    }
 
     init(
-        currentVersion: String = AppUpdateCoordinator.bundleVersion(),
-        checkOperation: CheckOperation? = nil,
-        openURL: URLOpener? = nil
+        bundleIdentifier: String?,
+        bundleURL: URL,
+        currentVersion: String,
+        environment: [String: String],
+        driver: AppUpdateDriving? = nil,
+        revealInstallationLocations: InstallationRevealAction? = nil
     ) {
         self.currentVersion = currentVersion
-        if let checkOperation {
-            self.checkOperation = checkOperation
-        } else {
-            let service = UpdateCheckService()
-            self.checkOperation = { version in
-                try await service.check(currentVersion: version)
-            }
+        self.bundleURL = bundleURL
+        let feedURLOverride = AppInstallationLocationPolicy.testFeedURL(
+            bundleIdentifier: bundleIdentifier,
+            environment: environment
+        )
+        updatesAreEnabled = bundleIdentifier != AppInstallationLocationPolicy.testBundleIdentifier
+            || feedURLOverride != nil
+        installationPromptRequired = AppInstallationLocationPolicy.requiresInstallationPrompt(
+            bundleIdentifier: bundleIdentifier,
+            bundleURL: bundleURL,
+            environment: environment
+        )
+        brandState = .current(version: currentVersion)
+        self.driver = driver ?? SparkleUpdateDriver(
+            feedURLOverride: feedURLOverride
+        )
+        self.revealInstallationLocations = revealInstallationLocations ?? { bundleURL, applicationsURL in
+            NSWorkspace.shared.open(applicationsURL)
+            NSWorkspace.shared.activateFileViewerSelecting([bundleURL])
         }
-        self.openURL = openURL ?? { NSWorkspace.shared.open($0) }
+        self.driver.eventHandler = { [weak self] event in
+            self?.handle(event)
+        }
     }
 
-    func checkAutomatically(log: (String) -> Void) async {
-        guard !didStartAutomaticCheck else { return }
-        didStartAutomaticCheck = true
-        await check(trigger: .automatic, log: log)
-    }
+    func start(log: @escaping Log) {
+        guard !didStart else { return }
+        didStart = true
+        self.log = log
 
-    func checkManually(log: (String) -> Void) async {
-        await check(trigger: .manual, log: log)
-    }
-
-    func openRelease(_ release: GitHubRelease, log: (String) -> Void) {
-        guard UpdateCheckService.isTrustedReleaseURL(release.htmlURL) else {
-            let message = UpdateCheckError.untrustedReleaseURL.localizedDescription
-            notice = .failure(message: message)
-            log("打开更新页面失败：\(message)")
+        guard !installationPromptRequired else {
+            showInstallationPrompt = true
+            log("当前会小纪未安装在“应用程序”目录，已暂停自动更新检查。")
             return
         }
-        guard openURL(release.htmlURL) else {
-            let message = "无法打开浏览器，请稍后重试。"
-            notice = .failure(message: message)
-            log("打开更新页面失败：\(message)")
-            return
-        }
-        log("已打开 AgendAI \(release.version) 下载页面。")
-    }
-
-    private func check(trigger: AppUpdateCheckTrigger, log: (String) -> Void) async {
-        guard !isChecking else { return }
-        isChecking = true
-        defer { isChecking = false }
+        guard updatesAreEnabled else { return }
 
         do {
-            switch try await checkOperation(currentVersion) {
-            case .updateAvailable(let release):
-                notice = .updateAvailable(currentVersion: currentVersion, release: release)
-                log("发现新版本 \(release.version)，当前版本 \(currentVersion)。")
-            case .upToDate:
-                log("更新检查完成，当前版本 \(currentVersion) 已是最新版。")
-                if trigger == .manual {
-                    notice = .upToDate(currentVersion: currentVersion)
-                }
-            }
+            try driver.start()
+            isChecking = true
+            driver.checkForUpdatesInBackground()
         } catch {
-            let message = error.localizedDescription
-            log("更新检查失败：\(message)")
-            if trigger == .manual {
-                notice = .failure(message: message)
-            }
+            isChecking = false
+            log("自动更新服务启动失败：\(error.localizedDescription)")
         }
     }
 
-    private static func bundleVersion() -> String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
+    func checkForUpdatesManually(log: @escaping Log) {
+        self.log = log
+        guard !installationPromptRequired else {
+            showInstallationPrompt = true
+            return
+        }
+        guard updatesAreEnabled else { return }
+        guard driver.canCheckForUpdates else { return }
+
+        isChecking = true
+        driver.checkForUpdates()
+    }
+
+    func revealCurrentAppAndApplications() {
+        revealInstallationLocations(bundleURL, AppInstallationLocationPolicy.applicationsDirectory)
+    }
+
+    private func handle(_ event: AppUpdateDriverEvent) {
+        isChecking = false
+        switch event {
+        case .updateAvailable(let latestVersion):
+            brandState = .updateAvailable(currentVersion: currentVersion, latestVersion: latestVersion)
+            log?("发现新版本 \(latestVersion)，当前版本 \(currentVersion)。")
+        case .upToDate:
+            brandState = .current(version: currentVersion)
+            log?("更新检查完成，当前版本 \(currentVersion) 已是最新版。")
+        case .failed(let message):
+            log?("更新检查失败：\(message)")
+        }
     }
 }

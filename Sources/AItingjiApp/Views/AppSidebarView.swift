@@ -3,6 +3,7 @@ import SwiftUI
 
 struct AppSidebarView: View {
     @Environment(AppState.self) private var appState
+    @Bindable var updateCoordinator: AppUpdateCoordinator
 
     let selectedDestination: WorkspaceDestination
     let onSelectDestination: (WorkspaceDestination) -> Void
@@ -12,16 +13,26 @@ struct AppSidebarView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("会小纪")
-                    .font(.title2.bold())
-                Text("AgendAI")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
+            Button {
+                updateCoordinator.checkForUpdatesManually(log: appState.recordUpdateLog)
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("会小纪")
+                        .font(.title2.bold())
+                        .foregroundStyle(updateCoordinator.brandState.hasUpdate ? .orange : .primary)
+                    Text(updateCoordinator.brandState.versionLabel)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(updateCoordinator.brandState.hasUpdate ? .orange : .secondary)
+                        .frame(height: 16, alignment: .leading)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-                .padding(.horizontal, 16)
-                .padding(.top, 14)
-                .padding(.bottom, 10)
+            .buttonStyle(.plain)
+            .disabled(updateCoordinator.isChecking || updateCoordinator.installationPromptRequired || !updateCoordinator.updatesAreEnabled)
+            .help("检查更新")
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 10)
 
             VStack(spacing: 2) {
                 Button {
