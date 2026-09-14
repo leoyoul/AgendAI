@@ -116,6 +116,8 @@ struct MeetingDetailView: View {
             exportPanel
         case .minutes:
             meetingMinutesPanel
+        case .followUps:
+            meetingFollowUpsPanel
         case .analysis:
             meetingAnalysisPanel
         case .notes:
@@ -365,6 +367,96 @@ struct MeetingDetailView: View {
         .panelStyle()
     }
 
+    private var meetingFollowUpsPanel: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Label("会后待办", systemImage: "checklist")
+                    .font(.title2.bold())
+                Spacer()
+                if appState.isMatchingSelectedMeetingFollowUps {
+                    ProgressView().controlSize(.small)
+                    Text("匹配中").font(.caption).foregroundStyle(.secondary)
+                }
+                Button {
+                    appState.regenerateSelectedMeetingFollowUps()
+                } label: {
+                    Label("重新生成", systemImage: "arrow.clockwise")
+                }
+                .disabled(appState.selectedMeetingMinutesArtifact == nil || appState.isMatchingSelectedMeetingFollowUps)
+                Button {
+                    appState.handoffAllSelectedMeetingFollowUps()
+                } label: {
+                    Label("一键全部交接到禅道", systemImage: "arrow.up.right.square")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(appState.selectedMeetingFollowUps.isEmpty || appState.isMatchingSelectedMeetingFollowUps)
+            }
+
+            if let error = appState.followUpErrorsByMeeting[meeting.id] {
+                Label("匹配失败：\(error)", systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            }
+
+            if appState.selectedMeetingFollowUps.isEmpty {
+                ContentUnavailableView(
+                    "暂无会后待办",
+                    systemImage: "checklist",
+                    description: Text(appState.selectedMeetingMinutesArtifact == nil ? "请先生成会议纪要。" : "点击“重新生成”从会议纪要和禅道执行数据匹配待办。")
+                )
+                .frame(maxWidth: .infinity, minHeight: 180)
+            } else {
+                let followUps = appState.selectedMeetingFollowUps
+                ScrollView(.horizontal) {
+                    Grid(horizontalSpacing: 0, verticalSpacing: 0) {
+                        GridRow {
+                            followUpHeader("任务名称", width: 220)
+                            followUpHeader("所属项目", width: 160)
+                            followUpHeader("任务负责人", width: 130)
+                            followUpHeader("计划开始", width: 130)
+                            followUpHeader("计划结束", width: 130)
+                            followUpHeader("状态", width: 120)
+                            followUpHeader("操作", width: 160)
+                        }
+                        ForEach(followUps) { todo in
+                            GridRow {
+                                followUpCell(todo.title, width: 220)
+                                followUpCell(todo.projectName, width: 160)
+                                followUpCell(todo.ownerName, width: 130)
+                                followUpCell(todo.plannedStart, width: 130)
+                                followUpCell(todo.plannedEnd, width: 130)
+                                Text(todo.status.displayName)
+                                    .foregroundStyle(todo.status == .failed ? .orange : .secondary)
+                                    .frame(width: 120, alignment: .topLeading)
+                                    .padding(10)
+                                Button {
+                                    appState.handoffFollowUp(todo)
+                                } label: {
+                                    Label(todo.status == .handedOff ? "已交接" : "交接到禅道", systemImage: todo.status == .handedOff ? "checkmark.circle" : "arrow.up.right.square")
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(todo.status == .handedOff || todo.status == .pending || todo.status == .failed)
+                                .padding(8)
+                            }
+                        }
+                    }
+                    .overlay { Rectangle().stroke(Color.secondary.opacity(0.25), lineWidth: 1) }
+                }
+            }
+        }
+        .panelStyle()
+    }
+
+    private func followUpHeader(_ value: String, width: CGFloat) -> some View {
+        Text(value).font(.caption.bold()).frame(width: width, alignment: .leading).padding(10).background(Color.secondary.opacity(0.1))
+    }
+
+    private func followUpCell(_ value: String, width: CGFloat) -> some View {
+        Text(value).frame(width: width, alignment: .topLeading).padding(10).gridCellAnchor(.topLeading)
+    }
+
     private var meetingAnalysisPanel: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
@@ -585,7 +677,7 @@ struct MeetingDetailView: View {
 
     private var emptyAnalysisDescription: String {
         if appState.selectedMeetingMinutesArtifact == nil {
-            return "请先生成原始会议纪要。"
+            return "请先生成会议纪要。"
         }
         if !appState.hasEnabledMeetingMinutesModel {
             return "请先在模型配置中新增并启用 Agent 模型。"
@@ -599,6 +691,7 @@ private enum MeetingDetailTab: String, CaseIterable, Identifiable {
     case transcript
     case notes
     case minutes
+    case followUps
     case analysis
     case agent
 
@@ -609,7 +702,8 @@ private enum MeetingDetailTab: String, CaseIterable, Identifiable {
         case .recording: "录音"
         case .transcript: "转写记录"
         case .notes: "笔记"
-        case .minutes: "原始纪要"
+        case .minutes: "会议纪要"
+        case .followUps: "会后待办"
         case .analysis: "AI 分析"
         case .agent: "Agent"
         }
@@ -621,6 +715,7 @@ private enum MeetingDetailTab: String, CaseIterable, Identifiable {
         case .transcript: "doc.plaintext"
         case .notes: "note.text"
         case .minutes: "doc.text"
+        case .followUps: "checklist"
         case .analysis: "sparkles.rectangle.stack"
         case .agent: "terminal"
         }
@@ -628,7 +723,6 @@ private enum MeetingDetailTab: String, CaseIterable, Identifiable {
 }
 
 private struct MeetingAnalysisTodoTable: View {
-    @Environment(AppState.self) private var appState
     let meetingID: Meeting.ID
     let todos: [MeetingAnalysisTodo]
 
@@ -669,13 +763,11 @@ private struct MeetingAnalysisTodoTable: View {
                             cell(todo.task, width: 260)
                             cell(todo.deliverable, width: 180)
                             cell(todo.deadline, width: 130)
-                            Button {
-                                appState.prepareZentaoHandoff(title: todo.item, detail: todo.task, owner: todo.owner, deadline: todo.deadline)
-                            } label: {
-                                Label("交接到禅道", systemImage: "arrow.up.right.square")
-                            }
-                            .buttonStyle(.bordered)
-                            .padding(8)
+                            Text("请在“会后待办”中交接")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 150, alignment: .leading)
+                                .padding(8)
                         }
                     }
                 }

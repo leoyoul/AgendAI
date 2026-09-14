@@ -57,7 +57,7 @@ struct ModelSettingsView: View {
         VStack(alignment: .leading, spacing: 10) {
             Label("分阶段处理", systemImage: "bolt.waveform")
                 .font(.title2.bold())
-            Text("默认转写模型负责实时记录；录音结束后，Agent 模型仅依据本场资料生成结构化原始会议纪要。")
+            Text("默认转写模型负责实时记录；录音结束后，Agent 模型仅依据本场资料生成结构化会议纪要。")
                 .foregroundStyle(.secondary)
         }
         .panelStyle()
@@ -82,7 +82,7 @@ struct ModelSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else if type == .agent {
-                Text("供原始会议纪要、AI 分析会议纪要和 Agent 聊天使用；包含图片笔记时必须使用多模态模型。")
+                Text("供会议纪要、AI 分析会议纪要和 Agent 聊天使用；包含图片笔记时必须使用多模态模型。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
@@ -117,7 +117,7 @@ struct ModelSettingsView: View {
     private var meetingMinutesPromptEditor: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Label("原始会议纪要提示词", systemImage: "text.quote")
+            Label("会议纪要提示词", systemImage: "text.quote")
                     .font(.headline)
                 Spacer()
                 Text("\(meetingMinutesPromptDraft.count) 字")
@@ -171,7 +171,7 @@ struct ModelSettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Text("用于 AI 分析结论与职责型待办；不会影响原始会议纪要。")
+            Text("用于 AI 分析结论与职责型待办；不会影响会议纪要。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 

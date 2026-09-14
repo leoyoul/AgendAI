@@ -47,6 +47,7 @@ final class AppState {
     private let modelTester = ModelSourceTester(loader: URLSessionDataLoader())
     private let meetingMinutesGenerator: MeetingMinutesGenerator
     private let meetingAnalysisGenerator: MeetingAnalysisGenerator
+    private let zentaoMCPClient: ZentaoMCPClient
     private let debugLogStore: AppDebugLogStore
     private let permissionService = PermissionService()
     private var activeCapture: AudioCaptureSession?
@@ -118,6 +119,9 @@ final class AppState {
     private(set) var debugLogEntries: [AppDebugLogEntry] = []
     private var debugPersistedMeetingsByID: [Meeting.ID: Meeting] = [:]
     private(set) var meetingAnalysisArtifacts: [Meeting.ID: MeetingAnalysisArtifact] = [:]
+    private(set) var followUpsByMeeting: [Meeting.ID: [ZentaoFollowUpTodo]] = [:]
+    private(set) var followUpMatchingMeetingIDs: Set<Meeting.ID> = []
+    private(set) var followUpErrorsByMeeting: [Meeting.ID: String] = [:]
     private(set) var generatingMeetingAnalysisIDs: Set<Meeting.ID> = []
     @ObservationIgnored private var meetingAnalysisTasks: [Meeting.ID: Task<Void, Never>] = [:]
     var statusMessage = "正在加载本地数据。"
@@ -317,10 +321,12 @@ final class AppState {
         resumePendingTranscriptions: Bool = true,
         meetingMinutesGenerator: MeetingMinutesGenerator = MeetingMinutesGenerator(),
         meetingAnalysisGenerator: MeetingAnalysisGenerator = MeetingAnalysisGenerator(),
+        zentaoMCPClient: ZentaoMCPClient = ZentaoMCPClient(),
         debugLogStore: AppDebugLogStore = AppDebugLogStore()
     ) {
         self.meetingMinutesGenerator = meetingMinutesGenerator
         self.meetingAnalysisGenerator = meetingAnalysisGenerator
+        self.zentaoMCPClient = zentaoMCPClient
         self.debugLogStore = debugLogStore
         pendingTranscriptionQueue = try? PendingTranscriptionQueue(
             rootDirectoryURL: pendingTranscriptionRootURL ?? Self.pendingTranscriptionRootURL
@@ -464,13 +470,14 @@ final class AppState {
         refreshMicrophoneDevices(preferredDeviceID: persistedMicrophoneDeviceID)
         migrateExampleASRToLocalDefaultIfNeeded()
         disableExamplePostprocessSourceIfNeeded()
-        _ = shouldSeedMeetingMinutesModel // 旧配置仅保留兼容；原始纪要现由 Agent 生成。
+        _ = shouldSeedMeetingMinutesModel // 旧配置仅保留兼容；会议纪要现由 Agent 生成。
         enforceSingleEnabledASRSourceIfNeeded()
         refreshVisibleMeetings()
         refreshPermissionStatus()
         refreshExportPreview()
         restoreMeetingMinutesArtifacts()
         restoreMeetingAnalysisArtifacts()
+        restoreFollowUps()
         refreshDebugLogPage()
         appendDebugLog(category: "应用", message: "应用启动，已加载 \(meetings.count) 场会议。")
         recoverInterruptedMeetingAgentMessages()
@@ -478,6 +485,104 @@ final class AppState {
             Task { [weak self] in
                 await self?.resumeBackgroundProcessingIfNeeded()
             }
+        }
+    }
+
+    var selectedMeetingFollowUps: [ZentaoFollowUpTodo] {
+        guard let selectedMeetingID else { return [] }
+        return followUpsByMeeting[selectedMeetingID, default: []]
+    }
+
+    var isMatchingSelectedMeetingFollowUps: Bool {
+        guard let selectedMeetingID else { return false }
+        return followUpMatchingMeetingIDs.contains(selectedMeetingID)
+    }
+
+    func regenerateSelectedMeetingFollowUps() {
+        guard let meetingID = selectedMeetingID else { return }
+        matchFollowUps(meetingID: meetingID)
+    }
+
+    func handoffFollowUp(_ todo: ZentaoFollowUpTodo) {
+        guard let meeting = meetings.first(where: { $0.id == todo.meetingID }),
+              let source = defaultModelSource(type: .agent) else {
+            statusMessage = "请先配置可用的 Agent/MCP。"
+            return
+        }
+        guard todo.status != .handedOff, !todo.title.isEmpty,
+              todo.projectName != "待确认", todo.executionName != "待确认",
+              todo.ownerName != "待确认" else {
+            statusMessage = "任务名称、项目、执行和负责人必须先完成匹配。"
+            return
+        }
+        let runtime = meetingAgentRuntimeConfiguration(meeting: meeting)
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let result = try await self.zentaoMCPClient.create(todo: todo, meeting: meeting, source: source, runtime: runtime)
+                self.updateFollowUp(result)
+                self.statusMessage = "已交接任务“\(todo.title)”到禅道。"
+            } catch {
+                self.statusMessage = "禅道交接失败：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    func handoffAllSelectedMeetingFollowUps() {
+        for todo in selectedMeetingFollowUps where todo.status != .handedOff {
+            handoffFollowUp(todo)
+        }
+    }
+
+    private func matchFollowUps(meetingID: Meeting.ID) {
+        guard let meeting = meetings.first(where: { $0.id == meetingID }),
+              let minutes = meetingMinutesArtifacts[meetingID]?.document,
+              let source = defaultModelSource(type: .agent) else {
+            followUpErrorsByMeeting[meetingID] = "请先生成会议纪要并配置可用的 Agent/MCP。"
+            return
+        }
+        guard followUpMatchingMeetingIDs.insert(meetingID).inserted else { return }
+        followUpErrorsByMeeting[meetingID] = nil
+        let runtime = meetingAgentRuntimeConfiguration(meeting: meeting)
+        Task { [weak self] in
+            guard let self else { return }
+            defer { self.followUpMatchingMeetingIDs.remove(meetingID) }
+            do {
+                let result = try await self.zentaoMCPClient.match(meeting: meeting, minutes: minutes, source: source, runtime: runtime)
+                self.followUpsByMeeting[meetingID] = result.todos
+                self.persistFollowUps()
+                self.statusMessage = "会后待办已根据禅道数据重新生成。"
+            } catch {
+                self.followUpErrorsByMeeting[meetingID] = error.localizedDescription
+                self.statusMessage = "会后待办匹配失败，可稍后重新生成：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func updateFollowUp(_ todo: ZentaoFollowUpTodo) {
+        guard var values = followUpsByMeeting[todo.meetingID], let index = values.firstIndex(where: { $0.id == todo.id }) else { return }
+        values[index] = todo
+        followUpsByMeeting[todo.meetingID] = values
+        persistFollowUps()
+    }
+
+    private static var followUpsURL: URL {
+        ApplicationDataDirectory.child("MeetingFollowUps", isDirectory: true).appendingPathComponent("follow-ups.json")
+    }
+
+    private func restoreFollowUps() {
+        guard let data = try? Data(contentsOf: Self.followUpsURL),
+              let decoded = try? JSONDecoder().decode([Meeting.ID: [ZentaoFollowUpTodo]].self, from: data) else { return }
+        followUpsByMeeting = decoded
+    }
+
+    private func persistFollowUps() {
+        do {
+            try FileManager.default.createDirectory(at: Self.followUpsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let data = try JSONEncoder().encode(followUpsByMeeting)
+            try data.write(to: Self.followUpsURL, options: .atomic)
+        } catch {
+            appendDebugLog(category: "禅道", message: "会后待办保存失败：\(error.localizedDescription)")
         }
     }
 
@@ -1038,7 +1143,7 @@ final class AppState {
             }
         }
         if selectedMeetingID == meetingID {
-            statusMessage = "会议笔记已修改，已保留原始会议纪要；重新生成后会更新内容。"
+            statusMessage = "会议笔记已修改，已保留会议纪要；重新生成后会更新内容。"
         }
     }
 
@@ -1982,6 +2087,7 @@ final class AppState {
                     return
                 }
                 self.meetingMinutesArtifacts[meetingID] = artifact
+                self.matchFollowUps(meetingID: meetingID)
                 self.persistMeetingNoteVisionResults(artifact.noteVisionResults)
                 self.persistMeetingNoteVisionFailures(artifact.noteVisionFailures)
                 _ = self.setPostprocessRecoveryPending(false, meetingID: meetingID)
@@ -2063,7 +2169,7 @@ final class AppState {
     func generateSelectedMeetingAnalysis() {
         guard let meeting = selectedMeeting,
               let originalMinutes = selectedMeetingMinutesArtifact else {
-            statusMessage = "请先生成原始会议纪要。"
+            statusMessage = "请先生成会议纪要。"
             return
         }
         let meetingID = meeting.id
@@ -4310,7 +4416,7 @@ final class AppState {
             if selectedMeetingID == meetingID {
                 statusMessage = meeting.captureSource == .imported
                     ? "标准会议纪要生成失败：未配置可用 Agent 模型。"
-                    : "未配置可用 Agent 模型，已保留原始转写，可稍后手动生成原始会议纪要。"
+                    : "未配置可用 Agent 模型，已保留原始转写，可稍后手动生成会议纪要。"
                 refreshExportPreview()
             }
             return meeting.captureSource != .imported
@@ -4334,6 +4440,7 @@ final class AppState {
                 return false
             }
             meetingMinutesArtifacts[meetingID] = artifact
+            matchFollowUps(meetingID: meetingID)
             persistMeetingNoteVisionResults(artifact.noteVisionResults)
             persistMeetingNoteVisionFailures(artifact.noteVisionFailures)
             updateMeeting(id: meetingID) {
