@@ -39,7 +39,7 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
 
 当前发布包使用本地 ad-hoc 签名，尚未使用 Apple Developer ID 或公证。首次打开时，macOS 可能要求右键选择“打开”，或在“系统设置 → 隐私与安全性”中确认。
 ]]></description>
-            <enclosure url="https://github.com/leoyoul/AgendAI/releases/download/v0.1.4/AgendAI-v0.1.4-macOS-universal.dmg" length="8570603" type="application/octet-stream" sparkle:edSignature="IEk9Kptd0cdFI+26P5LxPU43n4lvsJxt9YpnoYQ1ovej2N82OAo/z08dVpdITm8VkiZT+wM0/Fxr7h+1lLrQDQ=="/>
+            <enclosure url="https://github.com/leoyoul/AgendAI/releases/download/v0.1.4/AgendAI-v0.1.4-macOS-universal.dmg" length="8570640" type="application/octet-stream" sparkle:edSignature="Q8DBL9OFmarXYBMycMoNerS39iJPIMPFl7Uj0p2E/14AhsYWn7ap4oSL7+6/4saMR/njv4cM5trnGG58ArXhCw=="/>
         </item>
         <item>
             <title>0.1.3</title>
@@ -76,6 +76,6 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: 2HTB6LT+ARW/a/WgY2+w8Ptyh885EGL/dbpS5eB4ElaPSkv7bv2HhVunivXG2wnKQg9U9Ph4ZL1TXTqrKD10DQ==
+edSignature: 46os50My/TqwuI6KEbHfMcdSG605SxY8NtpYs7kP3FaTfT5BZTXdf5qwui8Q/kfxZG32OR7TUrzJJYeEGA8/Dg==
 length: 4743
 -->
