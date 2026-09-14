@@ -6,6 +6,38 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>AgendAI 会小纪</title>
         <item>
+            <title>0.1.5</title>
+            <pubDate>Mon, 14 Sep 2026 15:41:23 +0800</pubDate>
+            <link>https://github.com/leoyoul/AgendAI/releases/tag/v0.1.5</link>
+            <sparkle:version>6</sparkle:version>
+            <sparkle:shortVersionString>0.1.5</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description sparkle:format="markdown"><![CDATA[## AgendAI 会小纪 0.1.5
+
+### 导航与设置
+
+- 新增“设置”一级菜单及二级设置入口。
+- “新建会议”和“日历”保留在一级菜单。
+- 新增“设置 > 外部系统 > 禅道”。
+
+### 会议纪要与任务交接
+
+- 用户界面统一使用“会议纪要”名称。
+- 会议纪要中的待办和未决事项支持生成禅道交接草稿。
+- AI 分析待办支持同样的交接入口。
+- 交接内容会复制到剪贴板并打开禅道，由用户确认后创建，不会未经确认自动创建任务。
+
+### 禅道配置
+
+- 禅道地址支持内网 IP、局域网域名和公网 HTTPS 域名。
+- 支持配置账号和个人 API Token。
+- 保存配置时校验 `http://` 或 `https://` 地址。
+
+当前发布包使用本地 ad-hoc 签名，尚未使用 Apple Developer ID 或公证。
+]]></description>
+            <enclosure url="https://github.com/leoyoul/AgendAI/releases/download/v0.1.5/AgendAI-v0.1.5-macOS-universal.dmg" length="8627754" type="application/octet-stream" sparkle:edSignature="kj/XSJUqVUeAXent8B0QHlLAqb5UleaIaZYvpUdXAQenQEkj0WtRjEMBhbp4QZavGm98TwD+Pl4Rnuh/+8csAg=="/>
+        </item>
+        <item>
             <title>0.1.4</title>
             <pubDate>Mon, 14 Sep 2026 13:37:14 +0800</pubDate>
             <link>https://github.com/leoyoul/AgendAI/releases/tag/v0.1.4</link>
@@ -76,6 +108,6 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: 46os50My/TqwuI6KEbHfMcdSG605SxY8NtpYs7kP3FaTfT5BZTXdf5qwui8Q/kfxZG32OR7TUrzJJYeEGA8/Dg==
-length: 4743
+edSignature: FCVCG3wEZmmLf2VU+zMRJxuhn7SCnHVVmcWT3yjf1PHHIi3A+TKLUCIc+BjBIc9eJmVbR37pkhsxu7nBF1D3CA==
+length: 6345
 -->
