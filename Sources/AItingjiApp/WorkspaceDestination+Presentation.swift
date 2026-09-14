@@ -11,7 +11,8 @@ extension WorkspaceDestination: Identifiable {
         .vocabulary,
         .people,
         .archive,
-        .debugLog
+        .debugLog,
+        .externalSystems
     ]
 
     var title: String {
@@ -24,6 +25,7 @@ extension WorkspaceDestination: Identifiable {
         case .people: "人员"
         case .archive: "归档"
         case .debugLog: "调试日志"
+        case .externalSystems: "外部系统"
         case .meeting: "会议"
         }
     }
@@ -38,6 +40,7 @@ extension WorkspaceDestination: Identifiable {
         case .people: "person.2"
         case .archive: "archivebox"
         case .debugLog: "ladybug"
+        case .externalSystems: "arrow.triangle.2.circlepath"
         case .meeting: "waveform"
         }
     }

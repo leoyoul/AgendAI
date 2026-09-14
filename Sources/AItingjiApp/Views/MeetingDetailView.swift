@@ -264,7 +264,7 @@ struct MeetingDetailView: View {
     private var meetingMinutesPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label("原始会议纪要", systemImage: "doc.text")
+                Label("会议纪要", systemImage: "doc.text")
                     .font(.title2.bold())
                 Spacer()
                 if appState.isGeneratingSelectedMeetingMinutes {
@@ -284,7 +284,7 @@ struct MeetingDetailView: View {
                     } label: {
                         Label(
                             appState.selectedMeetingMinutesArtifact == nil
-                                ? (appState.selectedMeetingMinutesGenerationError == nil ? "生成原始纪要" : "重新生成")
+                                ? (appState.selectedMeetingMinutesGenerationError == nil ? "生成会议纪要" : "重新生成")
                                 : "重新生成",
                             systemImage: "sparkles"
                         )
@@ -419,7 +419,7 @@ struct MeetingDetailView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("任务分工派发")
                         .font(.headline)
-                    MeetingAnalysisTodoTable(todos: artifact.document.todos)
+                    MeetingAnalysisTodoTable(meetingID: meeting.id, todos: artifact.document.todos)
                 }
 
                 Divider()
@@ -628,6 +628,8 @@ private enum MeetingDetailTab: String, CaseIterable, Identifiable {
 }
 
 private struct MeetingAnalysisTodoTable: View {
+    @Environment(AppState.self) private var appState
+    let meetingID: Meeting.ID
     let todos: [MeetingAnalysisTodo]
 
     var body: some View {
@@ -639,6 +641,7 @@ private struct MeetingAnalysisTodoTable: View {
                     header("具体任务", width: 260)
                     header("交付物", width: 180)
                     header("截止时间", width: 130)
+                    header("操作", width: 150)
                 }
                 if todos.isEmpty {
                     GridRow {
@@ -647,6 +650,7 @@ private struct MeetingAnalysisTodoTable: View {
                         cell("待确认", width: 260)
                         cell("待确认", width: 180)
                         cell("待确认", width: 130)
+                        cell("", width: 150)
                     }
                 } else {
                     ForEach(todos) { todo in
@@ -665,6 +669,13 @@ private struct MeetingAnalysisTodoTable: View {
                             cell(todo.task, width: 260)
                             cell(todo.deliverable, width: 180)
                             cell(todo.deadline, width: 130)
+                            Button {
+                                appState.prepareZentaoHandoff(title: todo.item, detail: todo.task, owner: todo.owner, deadline: todo.deadline)
+                            } label: {
+                                Label("交接到禅道", systemImage: "arrow.up.right.square")
+                            }
+                            .buttonStyle(.bordered)
+                            .padding(8)
                         }
                     }
                 }

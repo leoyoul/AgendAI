@@ -9,6 +9,7 @@ public enum WorkspaceDestination: Equatable, Hashable, Sendable {
     case knowledgeBase
     case archive
     case debugLog
+    case externalSystems
     case meeting(Meeting.ID)
 
     public static var model: Self { .models }

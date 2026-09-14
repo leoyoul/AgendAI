@@ -305,6 +305,7 @@ private struct MeetingMinutesConclusionRow: View {
 }
 
 private struct MeetingMinutesUnresolvedRow: View {
+    @Environment(AppState.self) private var appState
     let item: MeetingMinutesPresentationModel.UnresolvedItem
 
     var body: some View {
@@ -327,6 +328,12 @@ private struct MeetingMinutesUnresolvedRow: View {
             Text("依据：\(item.evidence)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            Button {
+                appState.prepareZentaoHandoff(title: item.item, detail: item.handling, owner: item.owner, deadline: item.deadline)
+            } label: {
+                Label("任务交接到禅道", systemImage: "arrow.up.right.square")
+            }
+            .buttonStyle(.bordered)
         }
         .padding(14)
         .background(.orange.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
@@ -347,6 +354,7 @@ private struct MeetingMinutesUnresolvedRow: View {
 }
 
 private struct MeetingMinutesActionRow: View {
+    @Environment(AppState.self) private var appState
     let item: MeetingMinutesPresentationModel.ActionItem
 
     var body: some View {
@@ -371,6 +379,12 @@ private struct MeetingMinutesActionRow: View {
             Text("状态：\(item.status) · 依据：\(item.evidence)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            Button {
+                appState.prepareZentaoHandoff(title: item.action, detail: item.deliverable, owner: item.owners.first, deadline: item.deadline)
+            } label: {
+                Label("任务交接到禅道", systemImage: "arrow.up.right.square")
+            }
+            .buttonStyle(.bordered)
         }
         .padding(14)
         .background(.green.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))

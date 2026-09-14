@@ -802,4 +802,5 @@ public enum AppSettingKey {
     public static let difyKnowledgeBaseConfiguration = "dify_knowledge_base_configuration"
     public static let currentUserPersonID = "current_user_person_id"
     public static let meetingAgentWorkspacePath = "meeting_agent_workspace_path"
+    public static let zentaoConfiguration = "zentao_configuration"
 }

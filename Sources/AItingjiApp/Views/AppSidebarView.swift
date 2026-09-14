@@ -47,7 +47,7 @@ struct AppSidebarView: View {
                 .buttonStyle(.plain)
                 .disabled(!appState.isPersistenceAvailable)
 
-                ForEach(WorkspaceDestination.sidebarDestinations) { destination in
+                ForEach(WorkspaceDestination.sidebarDestinations.filter { $0 == .calendar }) { destination in
                     Button {
                         onSelectDestination(destination)
                     } label: {
@@ -64,6 +64,16 @@ struct AppSidebarView: View {
                             : Color.clear,
                         in: RoundedRectangle(cornerRadius: 6)
                     )
+                }
+                DisclosureGroup("设置", isExpanded: .constant(true)) {
+                    Button { onSelectDestination(.agentSettings) } label: { Label("Agent 设置", systemImage: "cpu").frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 22).frame(height: 30) }.buttonStyle(.plain)
+                    Button { onSelectDestination(.models) } label: { Label("模型", systemImage: "server.rack").frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 22).frame(height: 30) }.buttonStyle(.plain)
+                    Button { onSelectDestination(.knowledgeBase) } label: { Label("知识库", systemImage: "books.vertical").frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 22).frame(height: 30) }.buttonStyle(.plain)
+                    Button { onSelectDestination(.vocabulary) } label: { Label("常用词", systemImage: "character.book.closed").frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 22).frame(height: 30) }.buttonStyle(.plain)
+                    Button { onSelectDestination(.people) } label: { Label("人员", systemImage: "person.2").frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 22).frame(height: 30) }.buttonStyle(.plain)
+                    Button { onSelectDestination(.externalSystems) } label: { Label("外部系统", systemImage: "arrow.triangle.2.circlepath").frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 22).frame(height: 30) }.buttonStyle(.plain)
+                    Button { onSelectDestination(.archive) } label: { Label("归档", systemImage: "archivebox").frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 22).frame(height: 30) }.buttonStyle(.plain)
+                    Button { onSelectDestination(.debugLog) } label: { Label("调试日志", systemImage: "ladybug").frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 22).frame(height: 30) }.buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, 8)

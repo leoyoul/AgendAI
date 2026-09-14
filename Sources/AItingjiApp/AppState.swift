@@ -104,6 +104,7 @@ final class AppState {
     var knowledgeBaseConfiguration: DifyKnowledgeBaseConfiguration
     var currentUserPersonID: VoiceprintPerson.ID?
     var meetingAgentWorkspacePath: String
+    var zentaoConfiguration = ZentaoConfiguration()
     var meetingAgentMessagesByMeeting: [Meeting.ID: [MeetingAgentChatMessage]]
     private(set) var meetingAgentContextUsageByMeeting: [Meeting.ID: MeetingAgentContextUsage] = [:]
     private(set) var meetingAgentSessionStatsByMeeting: [Meeting.ID: PiAgentSessionStats] = [:]
@@ -362,6 +363,7 @@ final class AppState {
                 knowledgeBaseConfiguration = Self.decodeKnowledgeBaseConfiguration(
                     snapshot.appSettings[AppSettingKey.difyKnowledgeBaseConfiguration]
                 )
+                zentaoConfiguration = Self.decodeZentaoConfiguration(snapshot.appSettings[AppSettingKey.zentaoConfiguration])
                 currentUserPersonID = snapshot.appSettings[AppSettingKey.currentUserPersonID]
                     .flatMap { $0.isEmpty ? nil : $0 }
                 persistedMeetingAgentWorkspacePath = snapshot.appSettings[AppSettingKey.meetingAgentWorkspacePath]
@@ -402,6 +404,7 @@ final class AppState {
                 knowledgeBaseConfiguration = Self.decodeKnowledgeBaseConfiguration(
                     snapshot.appSettings[AppSettingKey.difyKnowledgeBaseConfiguration]
                 )
+                zentaoConfiguration = Self.decodeZentaoConfiguration(snapshot.appSettings[AppSettingKey.zentaoConfiguration])
                 currentUserPersonID = snapshot.appSettings[AppSettingKey.currentUserPersonID]
                     .flatMap { $0.isEmpty ? nil : $0 }
                 persistedMeetingAgentWorkspacePath = snapshot.appSettings[AppSettingKey.meetingAgentWorkspacePath]
@@ -437,6 +440,7 @@ final class AppState {
             knowledgeBaseConfiguration = Self.decodeKnowledgeBaseConfiguration(
                 defaults.appSettings[AppSettingKey.difyKnowledgeBaseConfiguration]
             )
+            zentaoConfiguration = Self.decodeZentaoConfiguration(defaults.appSettings[AppSettingKey.zentaoConfiguration])
             currentUserPersonID = nil
             persistedMeetingAgentWorkspacePath = defaults.appSettings[AppSettingKey.meetingAgentWorkspacePath]
             pendingPostprocessRecoveryMeetingIDs = []
@@ -2423,6 +2427,43 @@ final class AppState {
         postprocessPrompt = trimmed.isEmpty ? PostprocessPrompt.defaultMouthFillerCleanup : prompt
         persistAppSetting(AppSettingKey.postprocessPrompt, value: postprocessPrompt)
         statusMessage = "后处理提示词已保存。"
+    }
+
+    @discardableResult
+    func updateZentaoConfiguration(_ configuration: ZentaoConfiguration) -> Bool {
+        var value = configuration
+        value.baseURL = value.baseURL.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        value.username = value.username.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: value.baseURL),
+              let scheme = url.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              url.host != nil else {
+            statusMessage = "禅道地址无效，请填写完整的 http:// 或 https:// 地址。"
+            return false
+        }
+        zentaoConfiguration = value
+        if let data = try? JSONEncoder().encode(value), let encoded = String(data: data, encoding: .utf8) {
+            persistAppSetting(AppSettingKey.zentaoConfiguration, value: encoded)
+        }
+        statusMessage = "禅道配置已保存。"
+        return true
+    }
+
+    func prepareZentaoHandoff(title: String, detail: String, owner: String?, deadline: String?) {
+        guard zentaoConfiguration.enabled, let url = URL(string: zentaoConfiguration.baseURL) else {
+            statusMessage = "请先在 设置 > 外部系统 > 禅道 中启用并配置连接。"
+            return
+        }
+        let payload = "标题：\(title)\n任务：\(detail)\n负责人：\(owner ?? "待确认")\n截止时间：\(deadline ?? "待确认")"
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(payload, forType: .string)
+        NSWorkspace.shared.open(url)
+        statusMessage = "已复制禅道任务草稿并打开禅道；请在禅道中确认后创建。"
+    }
+
+    private static func decodeZentaoConfiguration(_ value: String?) -> ZentaoConfiguration {
+        guard let value, let data = value.data(using: .utf8), let decoded = try? JSONDecoder().decode(ZentaoConfiguration.self, from: data) else { return ZentaoConfiguration() }
+        return decoded
     }
 
     func updateMeetingMinutesPrompt(_ prompt: String) {

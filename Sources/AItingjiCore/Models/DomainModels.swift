@@ -1,5 +1,19 @@
 import Foundation
 
+public struct ZentaoConfiguration: Codable, Equatable, Sendable {
+    public var baseURL: String
+    public var username: String
+    public var token: String
+    public var enabled: Bool
+
+    public init(baseURL: String = "http://172.16.5.12:18080", username: String = "", token: String = "", enabled: Bool = false) {
+        self.baseURL = baseURL
+        self.username = username
+        self.token = token
+        self.enabled = enabled
+    }
+}
+
 public enum CaptureSource: String, Codable, Sendable, CaseIterable {
     case microphone
     case screenAudio = "screen_audio"

@@ -42,7 +42,7 @@ struct MeetingWorkspaceView: View {
         switch returnDestination {
         case .calendar:
             "本周会议"
-        case .agentSettings, .models, .knowledgeBase, .vocabulary, .people, .archive, .debugLog:
+        case .agentSettings, .models, .knowledgeBase, .vocabulary, .people, .archive, .debugLog, .externalSystems:
             "返回\(returnDestination.title)"
         case .meeting:
             "本周会议"

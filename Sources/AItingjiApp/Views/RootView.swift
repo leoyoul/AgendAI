@@ -42,6 +42,8 @@ struct RootView: View {
                 )
             case .debugLog:
                 DebugLogView()
+            case .externalSystems:
+                ExternalSystemsSettingsView()
             }
         }
         .onChange(of: navigation.detailMeetingID, initial: true) { _, meetingID in
