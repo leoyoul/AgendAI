@@ -10,6 +10,7 @@ public enum WorkspaceDestination: Equatable, Hashable, Sendable {
     case archive
     case debugLog
     case externalSystems
+    case settings
     case meeting(Meeting.ID)
 
     public static var model: Self { .models }
@@ -26,6 +27,7 @@ public struct MeetingWorkspaceNavigation: Equatable, Sendable {
     public var destination: WorkspaceDestination
     public var lastNonMeetingDestination: WorkspaceDestination
     public var displayedWeekDate: Date
+    public var settingsReturnDestination: WorkspaceDestination
 
     public var detailMeetingID: Meeting.ID? {
         get { destination.meetingID }
@@ -43,6 +45,7 @@ public struct MeetingWorkspaceNavigation: Equatable, Sendable {
         destination = .calendar
         lastNonMeetingDestination = .calendar
         self.displayedWeekDate = displayedWeekDate
+        settingsReturnDestination = .calendar
     }
 
     @discardableResult
@@ -52,6 +55,18 @@ public struct MeetingWorkspaceNavigation: Equatable, Sendable {
         }
         self.destination = destination
         return true
+    }
+
+    public mutating func enterSettings() {
+        if destination != .settings {
+            settingsReturnDestination = destination
+        }
+        destination = .settings
+    }
+
+    public mutating func leaveSettings() {
+        guard destination == .settings else { return }
+        destination = settingsReturnDestination
     }
 
     @discardableResult

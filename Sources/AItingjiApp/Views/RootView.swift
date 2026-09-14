@@ -5,45 +5,32 @@ struct RootView: View {
     @Environment(AppState.self) private var appState
     @Bindable var updateCoordinator: AppUpdateCoordinator
     @State private var navigation = MeetingWorkspaceNavigation(displayedWeekDate: Date())
+    @State private var settingsSelection: WorkspaceDestination = .agentSettings
 
     var body: some View {
         NavigationSplitView {
-            AppSidebarView(
-                updateCoordinator: updateCoordinator,
-                selectedDestination: navigation.destination,
-                onSelectDestination: selectDestination,
-                onSelectMeeting: openMeeting,
-                onCreateMeeting: createMeeting,
-                onArchiveMeeting: archiveMeeting
-            )
-            .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 340)
+            if navigation.destination == .settings {
+                SettingsSidebarView(selection: $settingsSelection, onReturn: returnFromSettings)
+                    .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 300)
+            } else {
+                AppSidebarView(
+                    updateCoordinator: updateCoordinator,
+                    selectedDestination: navigation.destination,
+                    onSelectDestination: selectDestination,
+                    onSelectMeeting: openMeeting,
+                    onCreateMeeting: createMeeting,
+                    onArchiveMeeting: archiveMeeting
+                )
+                .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 340)
+            }
         } detail: {
-            switch navigation.destination {
-            case .calendar, .meeting:
+            if navigation.destination == .settings {
+                settingsDetail
+            } else {
                 MeetingWorkspaceView(
                     navigation: $navigation,
                     onSelectMeeting: openMeeting
                 )
-            case .models:
-                ModelSettingsView()
-            case .agentSettings:
-                AgentSettingsView()
-            case .knowledgeBase:
-                KnowledgeBaseSettingsView()
-            case .vocabulary:
-                VocabularyView()
-            case .people:
-                PeopleView()
-            case .archive:
-                ArchiveMeetingsView(
-                    onOpenMeeting: openMeeting,
-                    onRestoreMeeting: restoreMeeting,
-                    onDeleteMeetings: deleteMeetings
-                )
-            case .debugLog:
-                DebugLogView()
-            case .externalSystems:
-                ExternalSystemsSettingsView()
             }
         }
         .onChange(of: navigation.detailMeetingID, initial: true) { _, meetingID in
@@ -63,8 +50,54 @@ struct RootView: View {
         }
     }
 
+    @ViewBuilder
+    private var settingsDetail: some View {
+        switch settingsSelection {
+        case .models:
+            ModelSettingsView()
+        case .agentSettings:
+            AgentSettingsView()
+        case .knowledgeBase:
+            KnowledgeBaseSettingsView()
+        case .vocabulary:
+            VocabularyView()
+        case .people:
+            PeopleView()
+        case .archive:
+            ArchiveMeetingsView(
+                onOpenMeeting: openArchivedMeeting,
+                onRestoreMeeting: restoreMeeting,
+                onDeleteMeetings: deleteMeetings
+            )
+        case .debugLog:
+            DebugLogView()
+        case .externalSystems:
+            ExternalSystemsSettingsView()
+        case .calendar, .meeting, .settings:
+            EmptyView()
+        }
+    }
+
     private func selectDestination(_ destination: WorkspaceDestination) {
-        _ = navigation.selectDestination(destination)
+        if destination == .settings {
+            navigation.enterSettings()
+        } else {
+            _ = navigation.selectDestination(destination)
+        }
+    }
+
+    private func returnFromSettings() {
+        if let meetingID = navigation.settingsReturnDestination.meetingID,
+           !appState.meetings.contains(where: { $0.id == meetingID }) {
+            navigation.returnToCalendar()
+        } else {
+            navigation.leaveSettings()
+        }
+    }
+
+    private func openArchivedMeeting(_ meetingID: Meeting.ID) {
+        navigation.returnToCalendar()
+        openMeeting(meetingID)
     }
 
     private func openMeeting(_ meetingID: Meeting.ID) {

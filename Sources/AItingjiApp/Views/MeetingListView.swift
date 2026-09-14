@@ -3,7 +3,7 @@ import SwiftUI
 
 struct MeetingListView: View {
     @Environment(AppState.self) private var appState
-    @State private var searchText = ""
+    @SceneStorage("meetingListSearchText") private var searchText = ""
 
     let highlightedMeetingID: Meeting.ID?
     let onSelectMeeting: (Meeting.ID) -> Void

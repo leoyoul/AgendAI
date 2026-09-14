@@ -4,15 +4,18 @@ extension WorkspaceDestination: Identifiable {
     public var id: Self { self }
 
     static let sidebarDestinations: [WorkspaceDestination] = [
-        .calendar,
+        .calendar
+    ]
+
+    static let settingsDestinations: [WorkspaceDestination] = [
         .agentSettings,
-        .knowledgeBase,
         .models,
+        .knowledgeBase,
         .vocabulary,
         .people,
+        .externalSystems,
         .archive,
-        .debugLog,
-        .externalSystems
+        .debugLog
     ]
 
     var title: String {
@@ -26,6 +29,7 @@ extension WorkspaceDestination: Identifiable {
         case .archive: "归档"
         case .debugLog: "调试日志"
         case .externalSystems: "外部系统"
+        case .settings: "设置"
         case .meeting: "会议"
         }
     }
@@ -41,6 +45,7 @@ extension WorkspaceDestination: Identifiable {
         case .archive: "archivebox"
         case .debugLog: "ladybug"
         case .externalSystems: "arrow.triangle.2.circlepath"
+        case .settings: "gearshape"
         case .meeting: "waveform"
         }
     }

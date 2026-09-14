@@ -109,4 +109,38 @@ struct MeetingWorkspaceNavigationTests {
 
         #expect(navigation.destination == .meeting("current"))
     }
+
+    @Test("settings restores the current meeting and displayed week")
+    func settingsRestoresMeeting() {
+        var navigation = MeetingWorkspaceNavigation(displayedWeekDate: displayedWeekDate)
+        _ = navigation.openMeeting("current")
+
+        navigation.enterSettings()
+        navigation.enterSettings()
+        #expect(navigation.destination == .settings)
+        #expect(navigation.settingsReturnDestination == .meeting("current"))
+        #expect(navigation.displayedWeekDate == displayedWeekDate)
+
+        navigation.leaveSettings()
+        #expect(navigation.destination == .meeting("current"))
+        #expect(navigation.lastNonMeetingDestination == .calendar)
+    }
+
+    @Test("settings restores the calendar and opening an archive meeting returns to calendar")
+    func settingsAndArchiveNavigation() {
+        var navigation = MeetingWorkspaceNavigation(displayedWeekDate: displayedWeekDate)
+        navigation.enterSettings()
+        navigation.leaveSettings()
+        #expect(navigation.destination == .calendar)
+
+        navigation.enterSettings()
+        navigation.returnToCalendar()
+        _ = navigation.openMeeting("archived")
+        #expect(navigation.destination == .meeting("archived"))
+        #expect(navigation.lastNonMeetingDestination == .calendar)
+
+        navigation.detailMeetingID = nil
+        #expect(navigation.destination == .calendar)
+        #expect(navigation.displayedWeekDate == displayedWeekDate)
+    }
 }
