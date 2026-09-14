@@ -6,6 +6,32 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>AgendAI 会小纪</title>
         <item>
+            <title>0.1.6</title>
+            <pubDate>Mon, 14 Sep 2026 17:32:56 +0800</pubDate>
+            <link>https://github.com/leoyoul/AgendAI/releases/tag/v0.1.6</link>
+            <sparkle:version>7</sparkle:version>
+            <sparkle:shortVersionString>0.1.6</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description sparkle:format="markdown"><![CDATA[## AgendAI 会小纪 0.1.6
+
+### 设置工作区
+
+- 主侧边栏只保留“新建会议”“日历”“设置”和会议列表。
+- 设置切换为独立工作区，使用两栏布局展示二级设置菜单。
+- 设置页提供“返回应用”，返回前保留的会议或日历状态。
+- 从设置中的归档打开会议后，返回按钮回到日历。
+- 会议搜索条件在切换工作区后保留。
+
+### 验证
+
+- 通过 537 个 Swift 测试。
+- 生成 Universal macOS DMG 并完成 bundle 签名校验。
+
+当前发布包使用本地 ad-hoc 签名，尚未使用 Apple Developer ID 或公证。
+]]></description>
+            <enclosure url="https://github.com/leoyoul/AgendAI/releases/download/v0.1.6/AgendAI-v0.1.6-macOS-universal.dmg" length="8646570" type="application/octet-stream" sparkle:edSignature="lsQrhTJVDI97jUXfyiBDeiGQHGA25XqnosD5Q6YZzhsQiyDxnu8sd2TZ+KYWfcHWTKrHiVuAKZFlcYwzHWDbDA=="/>
+        </item>
+        <item>
             <title>0.1.5</title>
             <pubDate>Mon, 14 Sep 2026 15:41:23 +0800</pubDate>
             <link>https://github.com/leoyoul/AgendAI/releases/tag/v0.1.5</link>
@@ -73,41 +99,9 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
 ]]></description>
             <enclosure url="https://github.com/leoyoul/AgendAI/releases/download/v0.1.4/AgendAI-v0.1.4-macOS-universal.dmg" length="8570640" type="application/octet-stream" sparkle:edSignature="Q8DBL9OFmarXYBMycMoNerS39iJPIMPFl7Uj0p2E/14AhsYWn7ap4oSL7+6/4saMR/njv4cM5trnGG58ArXhCw=="/>
         </item>
-        <item>
-            <title>0.1.3</title>
-            <pubDate>Sun, 06 Sep 2026 02:12:05 +0800</pubDate>
-            <link>https://github.com/leoyoul/AgendAI/releases/tag/v0.1.3</link>
-            <sparkle:version>4</sparkle:version>
-            <sparkle:shortVersionString>0.1.3</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description sparkle:format="markdown"><![CDATA[## AgendAI 会小纪 0.1.3
-
-这是首次支持应用内自动升级的版本。`v0.1.2` 用户需要手动安装本版本一次；从 `v0.1.3` 开始，后续正式版本可在会小纪内完成下载、验签、安装和重启。
-
-### 安装与更新
-
-- 正式安装包改为标准 DMG：将“AgendAI 会小纪”拖到“Applications”。
-- 顶部品牌区常驻显示当前版本，点击即可检查更新。
-- 发现新版本时品牌区变为系统橙色，并显示 Sparkle 标准更新窗口。
-- 应用不在 `/Applications` 时会提醒安装，并暂停自动更新，避免从下载目录或 DMG 内直接替换。
-
-### 数据保护
-
-- Bundle ID 和 `Application Support/会小纪` 数据目录保持不变。
-- 更新只替换应用本体，会议、转写、纪要、录音路径、人员、禅道映射、模型配置、API Key 和当前用户身份继续保留。
-- 版本变化后仍会先通过 SQLite 官方备份接口备份数据库，再执行结构升级；最近保留 3 份。
-
-### 安全与兼容性
-
-- 更新包和 appcast 使用 AgendAI 专用 EdDSA 密钥签名，签名不匹配时 Sparkle 会拒绝安装。
-- 安装包为 Universal Binary，最低系统版本为 macOS 14，并已在 macOS 27 Apple Silicon 上完成构建验证。
-- 当前仍为本地 ad-hoc 签名且未做 Apple 公证。首次打开时可能需要右键选择“打开”，或在“系统设置 → 隐私与安全性”中确认。
-]]></description>
-            <enclosure url="https://github.com/leoyoul/AgendAI/releases/download/v0.1.3/AgendAI-v0.1.3-macOS-universal.dmg" length="8402844" type="application/octet-stream" sparkle:edSignature="EjAbw2ek2j2p/JhS4C35dC27te0Ly7tYU/UdXFJFFLG5FHhDI5TsSQZD9HqMUeEOHitQiCL4BFIiinc+vS/JDw=="/>
-        </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: FCVCG3wEZmmLf2VU+zMRJxuhn7SCnHVVmcWT3yjf1PHHIi3A+TKLUCIc+BjBIc9eJmVbR37pkhsxu7nBF1D3CA==
-length: 6345
+edSignature: +0KE0si8Hukz2V6LHN3V1HI6Mv+wMohHkhdSFMqQPnNF9MIW/QvDtbq0LcgCaIXj62f+t8ToA++jrAjgnJP7CA==
+length: 5519
 -->
