@@ -1392,7 +1392,129 @@ enum MeetingMinutesRenderer {
         guard hasHighFidelityData(document) else {
             return legacyMarkdown(document)
         }
-        return highFidelityMarkdown(document)
+        return structuredMarkdown(document)
+    }
+
+    private static func structuredMarkdown(_ document: MeetingMinutesDocument) -> String {
+        let topics = effectiveMainTopics(document)
+        let participants = participantSummary(document)
+        var lines = [
+            "# \(document.title)",
+            "",
+            "## 一、会议概览",
+            "",
+            "| 项目 | 内容 |",
+            "|---|---|",
+            "| 会议名称 | \(md(document.meetingName)) |",
+            "| 会议日期 | \(md(document.meetingDate)) |",
+            "| 会议时间 | \(md("\(document.duration)；\(document.meetingTime)")) |",
+            "| 会议地点 | 未记录 |",
+            "| 会议类型 | \(md(document.meetingType ?? "待确认")) |",
+            "| 参会人员 | \(md(participants)) |",
+            "| 会议依据 | \(md(document.sources.joined(separator: "；"))) |",
+            "",
+            "## 二、会议摘要",
+            "",
+            document.summary
+        ]
+
+        if let background = substantive(document.backgroundAndPurpose) {
+            lines += ["", "**背景与目的：** \(md(background))"]
+        }
+        if let expectedProblem = substantive(document.expectedProblem) {
+            lines += ["", "**需要解决的问题：** \(md(expectedProblem))"]
+        }
+
+        lines += ["", "## 三、会议议程与讨论", ""]
+        if topics.isEmpty {
+            lines.append("暂无可确认的议题，待人工复核。")
+        } else {
+            for (index, topic) in topics.enumerated() {
+                lines += [
+                    "### \(index + 1). \(md(topic.topic))",
+                    "",
+                    "**时间范围：** \(md(topic.timeRange ?? "待确认"))",
+                    "",
+                    "**讨论过程：** \(md(topicNarrative(topic)))",
+                    ""
+                ]
+                if let question = substantive(topic.question) {
+                    lines += ["**讨论焦点：** \(md(question))", ""]
+                }
+                let viewpoints = namedViewpoints(topic)
+                if !viewpoints.isEmpty {
+                    lines += ["**主要观点：**", ""]
+                    viewpoints.forEach { viewpoint in
+                        lines.append("- \(md(viewpoint.speaker))：\(md(viewpoint.viewpoint))")
+                    }
+                    lines.append("")
+                }
+                lines += [
+                    "**形成结果：** \(md(topic.outcome ?? "待确认"))",
+                    "",
+                    "**结果状态：** \(md(topic.status ?? "待确认"))；**依据：** \(md(topic.evidence ?? topic.timeRange ?? "待确认"))",
+                    ""
+                ]
+            }
+        }
+
+        lines += ["## 四、会议结论", ""]
+        if document.conclusions.isEmpty {
+            lines.append("暂无明确结论，待人工复核。")
+        } else {
+            for conclusion in document.conclusions {
+                lines += [
+                    "### \(md(conclusion.topic))",
+                    "",
+                    conclusion.conclusion,
+                    "",
+                    "**状态：** \(md(conclusion.status ?? "待确认"))",
+                    "",
+                    "**形成依据：** \(md(conclusion.rationale ?? "待确认"))",
+                    "",
+                    "**适用范围：** \(md(conclusion.scope ?? "待确认"))",
+                    ""
+                ]
+            }
+        }
+
+        lines += ["## 五、未决事项", ""]
+        if document.risks.isEmpty {
+            lines.append("暂无明确未决事项。")
+        } else {
+            lines += ["| 未决事项 | 可能影响 | 处理要求 | 下一步 | 责任人 | 时间节点 |", "|---|---|---|---|---|---|"]
+            for risk in document.risks {
+                lines.append("| \(md(risk.risk)) | \(md(risk.impact)) | \(md(risk.mitigation)) | \(md(risk.nextStep ?? "待确认")) | 待确认 | 待确认 |")
+            }
+        }
+
+        lines += ["", "## 六、已确定待办", ""]
+        if document.actions.isEmpty {
+            lines.append("暂无明确待办。")
+        } else {
+            lines += ["| 待办事项 | 负责人 | 交付物 | 截止时间 | 时间节点状态 |", "|---|---|---|---|---|"]
+            for action in document.actions {
+                let owners = action.owners.isEmpty ? "待确认" : action.owners.joined(separator: "、")
+                let deadline = action.deadline.trimmingCharacters(in: .whitespacesAndNewlines)
+                let deadlineStatus = deadline.isEmpty || deadline == "待确认" ? "未明确" : "已明确"
+                lines.append("| \(md(action.action)) | \(md(owners)) | \(md(action.deliverable ?? "待确认")) | \(md(deadline.isEmpty ? "待确认" : deadline)) | \(deadlineStatus) |")
+            }
+        }
+
+        lines += ["", "## 七、时间节点与归档资料", ""]
+        if document.milestones.isEmpty {
+            lines.append("暂无明确时间节点。")
+        } else {
+            lines += ["| 时间节点 | 目标 |", "|---|---|"]
+            for milestone in document.milestones {
+                lines.append("| \(md(milestone.date)) | \(md(milestone.target)) |")
+            }
+        }
+        if !document.archiveItems.isEmpty {
+            lines += ["", "**归档资料：** \(md(document.archiveItems.joined(separator: "、")))。"]
+        }
+        lines += ["", "> \(md(document.sensitiveNote))", "", "**整理日期：** \(document.preparedDate)", ""]
+        return lines.joined(separator: "\n")
     }
 
     private static func highFidelityMarkdown(_ document: MeetingMinutesDocument) -> String {
@@ -1680,7 +1802,104 @@ enum MeetingMinutesRenderer {
         guard hasHighFidelityData(document) else {
             return legacyHTML(document)
         }
-        return highFidelityHTML(document)
+        return structuredHTML(document)
+    }
+
+    private static func structuredHTML(_ document: MeetingMinutesDocument) -> String {
+        let topics = effectiveMainTopics(document)
+        let topicBlocks = topics.enumerated().map { index, topic in
+            let viewpoints = namedViewpoints(topic).map { viewpoint in
+                "<li><strong>\(htmlEscape(viewpoint.speaker))：</strong>\(htmlParagraph(viewpoint.viewpoint))</li>"
+            }.joined()
+            let viewpointsBlock = viewpoints.isEmpty ? "" : "<h4>主要观点</h4><ul>\(viewpoints)</ul>"
+            return """
+            <article class="topic-block">
+              <header><span class="topic-index">\(String(format: "%02d", index + 1))</span><h3>\(htmlEscape(topic.topic))</h3><span class="topic-time">\(htmlEscape(topic.timeRange ?? "待确认"))</span></header>
+              <dl class="detail-list"><dt>讨论焦点</dt><dd>\(htmlParagraph(topic.question ?? "待确认"))</dd><dt>讨论过程</dt><dd>\(htmlParagraph(topicNarrative(topic)))</dd></dl>
+              \(viewpointsBlock)
+              <div class="outcome"><strong>形成结果</strong><p>\(htmlParagraph(topic.outcome ?? "待确认"))</p><span>状态：\(htmlEscape(topic.status ?? "待确认"))　依据：\(htmlEscape(topic.evidence ?? topic.timeRange ?? "待确认"))</span></div>
+            </article>
+            """
+        }.joined(separator: "\n")
+        let conclusionBlocks = document.conclusions.map { item in
+            "<article class=\"decision-block\"><h3>\(htmlEscape(item.topic))</h3><p>\(htmlParagraph(item.conclusion))</p><dl class=\"detail-list\"><dt>状态</dt><dd>\(htmlEscape(item.status ?? "待确认"))</dd><dt>形成依据</dt><dd>\(htmlParagraph(item.rationale ?? "待确认"))</dd><dt>适用范围</dt><dd>\(htmlParagraph(item.scope ?? "待确认"))</dd></dl></article>"
+        }.joined(separator: "\n")
+        let unresolvedRows = document.risks.map { risk in
+            "<tr><td>\(htmlEscape(risk.risk))</td><td>\(htmlEscape(risk.impact))</td><td>\(htmlEscape(risk.mitigation))</td><td>\(htmlEscape(risk.nextStep ?? "待确认"))</td><td>待确认</td><td>待确认</td></tr>"
+        }.joined(separator: "\n")
+        let actionRows = document.actions.map { action in
+            let owners = action.owners.isEmpty ? "待确认" : action.owners.joined(separator: "、")
+            let deadline = action.deadline.trimmingCharacters(in: .whitespacesAndNewlines)
+            let deadlineValue = deadline.isEmpty ? "待确认" : deadline
+            let deadlineStatus = deadline.isEmpty || deadline == "待确认" ? "未明确" : "已明确"
+            return "<tr><td>\(htmlEscape(action.action))</td><td>\(htmlEscape(owners))</td><td>\(htmlParagraph(action.deliverable ?? "待确认"))</td><td>\(htmlEscape(deadlineValue))</td><td><span class=\"status\">\(deadlineStatus)</span></td></tr>"
+        }.joined(separator: "\n")
+        let milestoneRows = document.milestones.map { milestone in
+            "<tr><td>\(htmlEscape(milestone.date))</td><td>\(htmlEscape(milestone.target))</td></tr>"
+        }.joined(separator: "\n")
+        let background = substantive(document.backgroundAndPurpose).map { "<p><strong>背景与目的：</strong>\(htmlParagraph($0))</p>" } ?? ""
+        let expectedProblem = substantive(document.expectedProblem).map { "<p><strong>需要解决的问题：</strong>\(htmlParagraph($0))</p>" } ?? ""
+        let archive = document.archiveItems.isEmpty ? "" : "<p><strong>归档资料：</strong>\(htmlEscape(document.archiveItems.joined(separator: "、")))。</p>"
+
+        return """
+        <!DOCTYPE html>
+        <html lang="zh-CN">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <meta name="color-scheme" content="light">
+          <title>\(htmlEscape(document.title))</title>
+          <style>
+            :root { --ink:#25282a; --muted:#687277; --line:#d8dddf; --canvas:#eef1f0; --paper:#fff; --soft:#f5f7f6; --accent:#3d6868; --warning:#a46b26; }
+            * { box-sizing:border-box; }
+            body { margin:0; padding:36px 18px; color:var(--ink); background:var(--canvas); font-family:"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif; font-size:15px; line-height:1.75; overflow-wrap:anywhere; }
+            .document { width:min(100%, 980px); margin:0 auto; padding:42px 48px; background:var(--paper); border:1px solid var(--line); box-shadow:0 12px 32px rgba(33,40,42,.07); }
+            h1 { margin:0; font-size:30px; line-height:1.3; }
+            h2 { margin:34px 0 14px; padding:8px 12px; border-left:4px solid var(--accent); background:var(--soft); font-size:18px; }
+            h3 { margin:0; font-size:16px; }
+            h4 { margin:16px 0 5px; font-size:14px; }
+            p { margin:0 0 10px; }
+            .subtitle { margin:8px 0 28px; color:var(--muted); }
+            .meta, .data-table { width:100%; border-collapse:collapse; font-size:13px; }
+            .meta { margin:0 0 24px; }
+            th, td { padding:9px 11px; border:1px solid #b8c0c2; text-align:left; vertical-align:top; }
+            th { width:112px; color:var(--accent); background:#edf4f3; white-space:nowrap; }
+            .summary { padding:17px 19px; border:1px solid var(--line); border-top:3px solid var(--accent); background:#f8faf9; }
+            .topic-block, .decision-block { margin:12px 0; padding:18px 20px; border:1px solid var(--line); background:#fcfdfc; }
+            .topic-block > header { display:flex; align-items:baseline; gap:10px; }
+            .topic-index { color:var(--accent); font-weight:700; font-variant-numeric:tabular-nums; }
+            .topic-time { margin-left:auto; color:var(--muted); font-size:12px; }
+            .detail-list { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:5px 14px; margin:13px 0; }
+            dt { color:var(--accent); font-weight:700; }
+            dd { margin:0; }
+            ul { margin:6px 0 12px; padding-left:22px; }
+            .outcome { margin-top:13px; padding:12px 14px; background:#eef6f3; border-left:3px solid var(--accent); }
+            .outcome span, .evidence { color:var(--muted); font-size:12px; }
+            .status { color:var(--accent); font-weight:700; }
+            .table-wrap { overflow-x:auto; }
+            .data-table { line-height:1.65; }
+            .data-table th { width:auto; color:var(--ink); background:#eef2f1; text-align:center; }
+            .note { color:var(--warning); font-size:13px; }
+            footer { display:flex; justify-content:space-between; gap:20px; margin-top:34px; padding-top:14px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; }
+            @media (max-width:720px) { body { padding:0; } .document { padding:28px 16px; border:0; box-shadow:none; } h1 { font-size:24px; } .meta th, .meta td { display:block; width:100%; } .topic-block > header { flex-wrap:wrap; } .topic-time { margin-left:34px; width:100%; } .detail-list { grid-template-columns:1fr; gap:2px; } dt { margin-top:6px; } footer { display:block; } }
+            @media print { body { padding:0; background:#fff; } .document { width:100%; padding:16px 0; border:0; box-shadow:none; } }
+          </style>
+        </head>
+        <body>
+          <main class="document">
+            <header><h1>\(htmlEscape(document.title))</h1><p class="subtitle">会议纪要 · \(htmlEscape(document.meetingDate))</p></header>
+            <section aria-label="会议概览"><h2>一、会议概览</h2><table class="meta"><tbody><tr><th>会议名称</th><td>\(htmlEscape(document.meetingName))</td><th>会议日期</th><td>\(htmlEscape(document.meetingDate))</td></tr><tr><th>会议时间</th><td>\(htmlEscape("\(document.duration)；\(document.meetingTime)"))</td><th>会议地点</th><td>未记录</td></tr><tr><th>会议类型</th><td>\(htmlEscape(document.meetingType ?? "待确认"))</td><th>会议依据</th><td>\(htmlEscape(document.sources.joined(separator: "；")))</td></tr><tr><th>参会人员</th><td colspan="3">\(htmlEscape(participantSummary(document)))</td></tr></tbody></table></section>
+            <section aria-label="会议摘要"><h2>二、会议摘要</h2><div class="summary"><p>\(htmlParagraph(document.summary))</p>\(background)\(expectedProblem)</div></section>
+            <section aria-label="会议议程与讨论"><h2>三、会议议程与讨论</h2>\(topicBlocks.isEmpty ? "<p>暂无可确认的议题，待人工复核。</p>" : topicBlocks)</section>
+            <section aria-label="会议结论"><h2>四、会议结论</h2>\(conclusionBlocks.isEmpty ? "<p>暂无明确结论，待人工复核。</p>" : conclusionBlocks)</section>
+            <section aria-label="未决事项"><h2>五、未决事项</h2><div class="table-wrap"><table class="data-table"><thead><tr><th>未决事项</th><th>可能影响</th><th>处理要求</th><th>下一步</th><th>责任人</th><th>时间节点</th></tr></thead><tbody>\(unresolvedRows.isEmpty ? "<tr><td colspan=\"6\">暂无明确未决事项。</td></tr>" : unresolvedRows)</tbody></table></div></section>
+            <section aria-label="已确定待办"><h2>六、已确定待办</h2><div class="table-wrap"><table class="data-table"><thead><tr><th>待办事项</th><th>负责人</th><th>交付物</th><th>截止时间</th><th>时间节点状态</th></tr></thead><tbody>\(actionRows.isEmpty ? "<tr><td colspan=\"5\">暂无明确待办。</td></tr>" : actionRows)</tbody></table></div></section>
+            <section aria-label="时间节点与归档资料"><h2>七、时间节点与归档资料</h2><div class="table-wrap"><table class="data-table"><thead><tr><th>时间节点</th><th>目标</th></tr></thead><tbody>\(milestoneRows.isEmpty ? "<tr><td colspan=\"2\">暂无明确时间节点。</td></tr>" : milestoneRows)</tbody></table></div><div class="note">\(archive)\n<p>\(htmlEscape(document.sensitiveNote))</p></div></section>
+            <footer><span>整理日期：\(htmlEscape(document.preparedDate))</span><span>会议依据：\(htmlEscape(document.sources.joined(separator: "；")))</span></footer>
+          </main>
+        </body>
+        </html>
+        """
     }
 
     static func html(

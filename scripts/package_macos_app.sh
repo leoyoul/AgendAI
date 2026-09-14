@@ -3,8 +3,8 @@ set -eu
 
 APP_NAME="AgendAI 会小纪"
 BUNDLE_ID="com.local.aitingji"
-APP_VERSION="${AGEND_AI_APP_VERSION:-0.1.3}"
-APP_BUILD="${AGEND_AI_APP_BUILD:-4}"
+APP_VERSION="${AGEND_AI_APP_VERSION:-0.1.4}"
+APP_BUILD="${AGEND_AI_APP_BUILD:-5}"
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
 DMG_PATH="$DIST_DIR/AgendAI-v${APP_VERSION}-macOS-universal.dmg"

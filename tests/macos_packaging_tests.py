@@ -116,7 +116,7 @@ class MacOSPackagingTests(unittest.TestCase):
 
         self.assertIn('codesign --verify --deep --strict', script)
         self.assertIn('hdiutil attach', script)
-        self.assertIn('DMG_PATH="$ROOT_DIR/dist/AgendAI-v0.1.3-macOS-universal.dmg"', script)
+        self.assertIn('DMG_PATH="$ROOT_DIR/dist/AgendAI-v0.1.4-macOS-universal.dmg"', script)
         self.assertIn('ditto "$MOUNTED_APP" "$TARGET_APP"', script)
         self.assertIn("$1 ~ /^\\/dev\\//", script)
         self.assertNotIn('SOURCE_ZIP=', script)
@@ -125,7 +125,7 @@ class MacOSPackagingTests(unittest.TestCase):
     def test_readme_describes_dmg_install_and_sparkle_updates(self) -> None:
         readme = (self.repo / "README.md").read_text()
 
-        self.assertIn("AgendAI-v0.1.3-macOS-universal.dmg", readme)
+        self.assertIn("AgendAI-v0.1.4-macOS-universal.dmg", readme)
         self.assertIn("Sparkle", readme)
         self.assertIn("ad-hoc", readme)
         self.assertIn("Developer ID", readme)
@@ -151,8 +151,8 @@ class MacOSPackagingTests(unittest.TestCase):
             info = plistlib.load(file)
 
         self.assertEqual(info["CFBundleIdentifier"], "com.local.aitingji")
-        self.assertEqual(info["CFBundleShortVersionString"], "0.1.3")
-        self.assertEqual(info["CFBundleVersion"], "4")
+        self.assertEqual(info["CFBundleShortVersionString"], "0.1.4")
+        self.assertEqual(info["CFBundleVersion"], "5")
         self.assertNotIn("AgendAIDataDirectoryName", info)
 
     def test_isolated_test_app_has_independent_identity_and_data_directory(self) -> None:
@@ -161,8 +161,8 @@ class MacOSPackagingTests(unittest.TestCase):
 
         self.assertEqual(info["CFBundleDisplayName"], "AgendAI 会小纪 测试版")
         self.assertEqual(info["CFBundleIdentifier"], "com.local.aitingji.test")
-        self.assertEqual(info["CFBundleShortVersionString"], "0.1.3")
-        self.assertEqual(info["CFBundleVersion"], "4")
+        self.assertEqual(info["CFBundleShortVersionString"], "0.1.4")
+        self.assertEqual(info["CFBundleVersion"], "5")
         self.assertEqual(info["AgendAIDataDirectoryName"], "会小纪测试版")
 
     def test_test_app_scripts_do_not_target_the_production_app(self) -> None:

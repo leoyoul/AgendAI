@@ -1,8 +1,46 @@
-<?xml version="1.0" standalone="yes"?><!-- sparkle-sign-warning:
+<?xml version="1.0" standalone="yes"?>
+<!-- sparkle-sign-warning:
 IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
---><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+-->
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
     <channel>
         <title>AgendAI 会小纪</title>
+        <item>
+            <title>0.1.4</title>
+            <pubDate>Mon, 14 Sep 2026 13:37:14 +0800</pubDate>
+            <link>https://github.com/leoyoul/AgendAI/releases/tag/v0.1.4</link>
+            <sparkle:version>5</sparkle:version>
+            <sparkle:shortVersionString>0.1.4</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description sparkle:format="markdown"><![CDATA[## AgendAI 会小纪 0.1.4
+
+本版本优化全局界面交互和会议纪要阅读体验。
+
+### 界面与交互
+
+- 会议侧边栏支持搜索会议标题、状态和采集来源。
+- 会议列表增加右键菜单，可快速打开或归档会议。
+- 会议详情页将标题保存操作移至 macOS 工具栏。
+- 会议状态、空内容和缺失信息采用更明确的系统化呈现。
+
+### 结构化会议纪要
+
+- 原始纪要从等宽 Markdown 文本改为结构化文档视图。
+- 新增会议概览、摘要、议程、讨论过程、结论、未决事项、待办和时间节点分区。
+- 议题支持折叠/展开，待办和未决事项显示负责人、时间节点及状态。
+- 地点无可靠来源时显示“未记录”，未决事项责任人和时间无可靠来源时显示“待确认”。
+- Markdown 与 HTML 导出同步使用新版内容结构。
+
+### 兼容性与验证
+
+- 保留历史会议纪要缓存读取能力。
+- 未修改 AI 分析提示词、会议纪要生成提示词或 Agent 执行链路。
+- 通过 534 个 Swift 测试、macOS 构建和发布包检查。
+
+当前发布包使用本地 ad-hoc 签名，尚未使用 Apple Developer ID 或公证。首次打开时，macOS 可能要求右键选择“打开”，或在“系统设置 → 隐私与安全性”中确认。
+]]></description>
+            <enclosure url="https://github.com/leoyoul/AgendAI/releases/download/v0.1.4/AgendAI-v0.1.4-macOS-universal.dmg" length="8570603" type="application/octet-stream" sparkle:edSignature="IEk9Kptd0cdFI+26P5LxPU43n4lvsJxt9YpnoYQ1ovej2N82OAo/z08dVpdITm8VkiZT+wM0/Fxr7h+1lLrQDQ=="/>
+        </item>
         <item>
             <title>0.1.3</title>
             <pubDate>Sun, 06 Sep 2026 02:12:05 +0800</pubDate>
@@ -33,10 +71,11 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
 - 安装包为 Universal Binary，最低系统版本为 macOS 14，并已在 macOS 27 Apple Silicon 上完成构建验证。
 - 当前仍为本地 ad-hoc 签名且未做 Apple 公证。首次打开时可能需要右键选择“打开”，或在“系统设置 → 隐私与安全性”中确认。
 ]]></description>
-            <enclosure url="https://github.com/leoyoul/AgendAI/releases/download/v0.1.3/AgendAI-v0.1.3-macOS-universal.dmg" length="8402844" type="application/octet-stream" sparkle:edSignature="EjAbw2ek2j2p/JhS4C35dC27te0Ly7tYU/UdXFJFFLG5FHhDI5TsSQZD9HqMUeEOHitQiCL4BFIiinc+vS/JDw=="></enclosure>
+            <enclosure url="https://github.com/leoyoul/AgendAI/releases/download/v0.1.3/AgendAI-v0.1.3-macOS-universal.dmg" length="8402844" type="application/octet-stream" sparkle:edSignature="EjAbw2ek2j2p/JhS4C35dC27te0Ly7tYU/UdXFJFFLG5FHhDI5TsSQZD9HqMUeEOHitQiCL4BFIiinc+vS/JDw=="/>
         </item>
     </channel>
-</rss><!-- sparkle-signatures:
-edSignature: 8d6SROE5tUED0nHXmsIFWBf2mINr3NeMWIJObKHEt8CGkPFS24Br7OVEXF6YII7ihtv6CwvOXtKlGSwsJlYWBQ==
-length: 2661
+</rss>
+<!-- sparkle-signatures:
+edSignature: 2HTB6LT+ARW/a/WgY2+w8Ptyh885EGL/dbpS5eB4ElaPSkv7bv2HhVunivXG2wnKQg9U9Ph4ZL1TXTqrKD10DQ==
+length: 4743
 -->

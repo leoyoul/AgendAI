@@ -71,6 +71,20 @@ struct MeetingDetailView: View {
         .onChange(of: meeting.title) { _, newTitle in
             titleText = newTitle
         }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    appState.updateSelectedMeetingTitle(titleText)
+                } label: {
+                    Label("保存标题", systemImage: "checkmark")
+                }
+                .disabled(
+                    titleText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || appState.isSelectedMeetingContentLocked
+                )
+                .help("保存会议标题")
+            }
+        }
     }
 
     @ViewBuilder
@@ -127,10 +141,6 @@ struct MeetingDetailView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 HStack(spacing: 8) {
-                    Button("保存标题") {
-                        appState.updateSelectedMeetingTitle(titleText)
-                    }
-                    .disabled(titleText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || appState.isSelectedMeetingContentLocked)
                     Text(appState.isSelectedMeetingContentLocked ? "当前会议暂不可编辑。" : "标题会自动同步到左侧列表和导出预览。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -325,15 +335,10 @@ struct MeetingDetailView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                ScrollView {
-                    Text(artifact.displayMarkdown)
-                        .font(.system(.body, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding()
-                }
-                .frame(minHeight: 280)
-                .background(.background, in: RoundedRectangle(cornerRadius: 8))
+                MeetingMinutesDocumentView(
+                    model: MeetingMinutesPresentationModel(document: artifact.document)
+                )
+                .padding(.vertical, 4)
             } else if appState.isGeneratingSelectedMeetingMinutes {
                 ContentUnavailableView(
                     "会议纪要排队/生成中",

@@ -3,6 +3,7 @@ import SwiftUI
 
 struct MeetingListView: View {
     @Environment(AppState.self) private var appState
+    @State private var searchText = ""
 
     let highlightedMeetingID: Meeting.ID?
     let onSelectMeeting: (Meeting.ID) -> Void
@@ -10,7 +11,7 @@ struct MeetingListView: View {
 
     var body: some View {
         List {
-            ForEach(appState.visibleMeetings) { meeting in
+            ForEach(filteredMeetings) { meeting in
                 MeetingSidebarRow(
                     meeting: meeting,
                     isHighlighted: meeting.id == highlightedMeetingID,
@@ -31,12 +32,16 @@ struct MeetingListView: View {
                 )
             }
 
-            if appState.visibleMeetings.isEmpty {
-                Text("暂无会议")
-                    .foregroundStyle(.secondary)
+            if filteredMeetings.isEmpty {
+                ContentUnavailableView(
+                    searchText.isEmpty ? "暂无会议" : "没有匹配的会议",
+                    systemImage: searchText.isEmpty ? "calendar" : "magnifyingglass",
+                    description: searchText.isEmpty ? nil : Text("尝试搜索会议标题或状态")
+                )
+                .listRowBackground(Color.clear)
             }
 
-            if appState.visibleMeetings.count < appState.unarchivedMeetingCount {
+            if searchText.isEmpty && appState.visibleMeetings.count < appState.unarchivedMeetingCount {
                 Button("加载更多") {
                     appState.loadMoreMeetings()
                 }
@@ -44,8 +49,18 @@ struct MeetingListView: View {
             }
         }
         .listStyle(.sidebar)
+        .searchable(text: $searchText, placement: .sidebar, prompt: "搜索会议")
     }
 
+    private var filteredMeetings: [Meeting] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return appState.visibleMeetings }
+        return appState.visibleMeetings.filter { meeting in
+            meeting.title.localizedCaseInsensitiveContains(query)
+                || meeting.status.displayName.localizedCaseInsensitiveContains(query)
+                || meeting.captureSource.displayName.localizedCaseInsensitiveContains(query)
+        }
+    }
 }
 
 private struct MeetingSidebarRow: View {
@@ -112,6 +127,22 @@ private struct MeetingSidebarRow: View {
             } else {
                 showsArchiveButton = false
             }
+        }
+        .contextMenu {
+            Button {
+                onSelect()
+            } label: {
+                Label("打开会议", systemImage: "arrow.right.circle")
+            }
+
+            Divider()
+
+            Button {
+                onArchive()
+            } label: {
+                Label("归档会议", systemImage: "archivebox")
+            }
+            .disabled(isMutationLocked)
         }
     }
 

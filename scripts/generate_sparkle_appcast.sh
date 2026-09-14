@@ -2,7 +2,7 @@
 set -eu
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-VERSION="${AGEND_AI_APP_VERSION:-0.1.3}"
+VERSION="${AGEND_AI_APP_VERSION:-0.1.4}"
 ACCOUNT="${SPARKLE_KEY_ACCOUNT:-com.local.aitingji}"
 DMG_NAME="AgendAI-v${VERSION}-macOS-universal.dmg"
 DMG_PATH="$ROOT_DIR/dist/$DMG_NAME"
