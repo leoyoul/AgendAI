@@ -10,6 +10,7 @@ struct MeetingDetailView: View {
     @State private var showsMinutesPromptSheet = false
     @State private var additionalMinutesPrompt = ""
     @State private var selectedTab: MeetingDetailTab = .recording
+    @State private var showingFollowUpDiagnostics = false
     @State private var showsImageImporter = false
     @State private var imageImporterNoteID: MeetingNote.ID?
     let meeting: Meeting
@@ -382,7 +383,7 @@ struct MeetingDetailView: View {
                 } label: {
                     Label("重新生成", systemImage: "arrow.clockwise")
                 }
-                .disabled(appState.selectedMeetingMinutesArtifact == nil || appState.isMatchingSelectedMeetingFollowUps)
+                .disabled(appState.selectedMeetingMinutesArtifact == nil || appState.isMatchingSelectedMeetingFollowUps || (!appState.selectedMeetingFollowUps.isEmpty && appState.followUpErrorsByMeeting[meeting.id] == nil))
                 Button {
                     appState.handoffAllSelectedMeetingFollowUps()
                 } label: {
@@ -393,11 +394,16 @@ struct MeetingDetailView: View {
             }
 
             if let error = appState.followUpErrorsByMeeting[meeting.id] {
-                Label("匹配失败：\(error)", systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.orange)
-                    .padding(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                HStack(alignment: .top, spacing: 10) {
+                    Label("匹配失败：\(error)", systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                    Spacer()
+                    Button("查看详情") { showingFollowUpDiagnostics = true }
+                        .buttonStyle(.bordered)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
             }
 
             if appState.selectedMeetingFollowUps.isEmpty {
@@ -447,6 +453,21 @@ struct MeetingDetailView: View {
             }
         }
         .panelStyle()
+        .sheet(isPresented: $showingFollowUpDiagnostics) {
+            VStack(alignment: .leading, spacing: 16) {
+                Label("会后待办诊断详情", systemImage: "stethoscope")
+                    .font(.title2.bold())
+                Text(appState.followUpErrorsByMeeting[meeting.id] ?? "暂无诊断信息")
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text("诊断信息不会包含 Token 或 Authorization Header。网络恢复后可点击“重新生成”重试。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack { Spacer(); Button("关闭") { showingFollowUpDiagnostics = false } }
+            }
+            .padding(24)
+            .frame(minWidth: 520, minHeight: 220)
+        }
     }
 
     private func followUpHeader(_ value: String, width: CGFloat) -> some View {

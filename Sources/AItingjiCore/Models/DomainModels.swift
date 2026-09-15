@@ -5,12 +5,28 @@ public struct ZentaoConfiguration: Codable, Equatable, Sendable {
     public var username: String
     public var token: String
     public var enabled: Bool
+    public var mcpEndpoint: String
+    public var mcpTransport: String
 
-    public init(baseURL: String = "http://172.16.5.12:18080", username: String = "", token: String = "", enabled: Bool = false) {
+    public init(baseURL: String = "http://172.16.5.12:18080", username: String = "", token: String = "", enabled: Bool = false, mcpEndpoint: String = "", mcpTransport: String = "http") {
         self.baseURL = baseURL
         self.username = username
         self.token = token
         self.enabled = enabled
+        self.mcpEndpoint = mcpEndpoint
+        self.mcpTransport = mcpTransport
+    }
+
+    private enum CodingKeys: String, CodingKey { case baseURL, username, token, enabled, mcpEndpoint, mcpTransport }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        baseURL = try values.decodeIfPresent(String.self, forKey: .baseURL) ?? "http://172.16.5.12:18080"
+        username = try values.decodeIfPresent(String.self, forKey: .username) ?? ""
+        token = try values.decodeIfPresent(String.self, forKey: .token) ?? ""
+        enabled = try values.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+        mcpEndpoint = try values.decodeIfPresent(String.self, forKey: .mcpEndpoint) ?? ""
+        mcpTransport = try values.decodeIfPresent(String.self, forKey: .mcpTransport) ?? "http"
     }
 }
 

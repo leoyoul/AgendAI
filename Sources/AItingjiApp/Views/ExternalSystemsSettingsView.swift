@@ -11,9 +11,14 @@ struct ExternalSystemsSettingsView: View {
             Section {
                 Toggle("启用禅道", isOn: $draft.enabled)
                 TextField("禅道地址", text: $draft.baseURL)
+                TextField("Claude Code MCP 地址（可选）", text: $draft.mcpEndpoint)
+                TextField("MCP 传输类型", text: $draft.mcpTransport)
+                Text("禅道 MCP 地址留空时仅保存禅道主页地址；会后待办不会启动无效的 MCP 进程。Token 通过环境变量 ZENTAO_MCP_TOKEN 提供，不写入临时配置文件。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 TextField("登录账号（可选）", text: $draft.username)
-                SecureField("API Token（可选）", text: $draft.token)
-                Text("支持内网 IP、局域网域名和公网 HTTPS 域名。公网部署时请优先使用 HTTPS，并建议使用禅道个人 API Token；会小纪不会代替你登录，也不会自动创建任务。交接时会生成可审计草稿，确认后再在禅道中提交。")
+                SecureField("API Token（仅本次会话）", text: $draft.token)
+                Text("支持内网 IP、局域网域名和公网 HTTPS 域名。公网部署时请优先使用 HTTPS。会后待办通过 Claude Code 调用禅道 MCP，并按禅道 ID 或规范化名称去重。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {

@@ -11,6 +11,7 @@ struct ModelSettingsView: View {
             VStack(alignment: .leading, spacing: 18) {
                 header
                 realtimePolicyCard
+                runtimeRelationshipCard
                 ForEach(activeModelSourceTypes, id: \.self) { type in
                     modelSection(type: type)
                 }
@@ -63,6 +64,19 @@ struct ModelSettingsView: View {
         .panelStyle()
     }
 
+    private var runtimeRelationshipCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("模型与工具运行时", systemImage: "arrow.triangle.branch")
+                .font(.title2.bold())
+            Text("会议纪要和 AI 分析使用这里配置的 OpenAI-compatible/oMLX 模型。禅道项目、执行、人员和任务查询及交接固定由 Claude Code 调用 MCP，Claude Code 的模型、认证和 MCP 配置独立于这里的模型设置。")
+                .foregroundStyle(.secondary)
+            Text("因此，修改 Agent 模型不会改变 Claude Code 使用的模型；Claude Code 未设置独立模型时使用其默认模型。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .panelStyle()
+    }
+
     private func modelSection(type: ModelSourceType) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -82,7 +96,7 @@ struct ModelSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else if type == .agent {
-                Text("供会议纪要、AI 分析会议纪要和 Agent 聊天使用；包含图片笔记时必须使用多模态模型。")
+                Text("供会议纪要、AI 分析会议纪要和 Agent 聊天使用；包含图片笔记时必须使用多模态模型。禅道 MCP 交接不使用此模型，而使用 Claude Code。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {

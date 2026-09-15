@@ -6,6 +6,37 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>AgendAI 会小纪</title>
         <item>
+            <title>0.1.7-dev.2</title>
+            <pubDate>Tue, 15 Sep 2026 15:32:09 +0800</pubDate>
+            <link>https://github.com/leoyoul/AgendAI/releases/tag/v0.1.7-dev.2</link>
+            <sparkle:version>9</sparkle:version>
+            <sparkle:shortVersionString>0.1.7-dev.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description sparkle:format="markdown"><![CDATA[# AgendAI 会小纪 v0.1.7-dev.2
+
+这是用于禅道 MCP 联调的开发预览版，不是正式稳定版。
+
+## 本版本
+
+- 会后待办改由 Claude Code 调用禅道 MCP，并增加会话级 MCP 配置文件。
+- 修复 Claude Code 进程错误只显示退出码的问题；现在可区分未安装、未认证、MCP 不可达、超时和非法 JSON，并提供“查看详情”。
+- Claude Code 子进程支持硬超时和终止；错误信息会隐藏 Token、Bearer 和 API Key。
+- 会后待办迁移至 SQLite，保留旧 `follow-ups.json` 的兼容读取和备份。
+- 设置页明确区分：会议纪要/AI 分析使用应用模型配置，禅道 MCP 使用 Claude Code 的独立模型与认证配置。
+- 禅道 MCP endpoint 与传输类型可在“设置 > 外部系统”中配置；Token 仅通过 `ZENTAO_MCP_TOKEN` 环境变量提供，不保存到应用数据库。
+
+## 已知限制
+
+- 禅道 MCP 的真实字段映射及实际创建任务操作，仍需在公司网络环境中用测试会议确认。
+- 会议纪要和 AI 分析的既有 Pi 调用链未在本版迁移。
+
+## 安装
+
+下载 `AgendAI-v0.1.7-dev.2-macOS-universal.dmg`，将“AgendAI 会小纪”拖入 Applications。
+]]></description>
+            <enclosure url="https://github.com/leoyoul/AgendAI/releases/download/v0.1.7-dev.2/AgendAI-v0.1.7-dev.2-macOS-universal.dmg" length="8884231" type="application/octet-stream" sparkle:edSignature="sZyZdZIuG2GwcXQjabcjkY8X+YAlRrsPP3y4QuZtF59Exbc1e5f9w1EGYyuhIj1ZyZ/9Plg2VpRJqDGjb+9CCw=="/>
+        </item>
+        <item>
             <title>0.1.6</title>
             <pubDate>Mon, 14 Sep 2026 17:32:56 +0800</pubDate>
             <link>https://github.com/leoyoul/AgendAI/releases/tag/v0.1.6</link>
@@ -63,45 +94,9 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
 ]]></description>
             <enclosure url="https://github.com/leoyoul/AgendAI/releases/download/v0.1.5/AgendAI-v0.1.5-macOS-universal.dmg" length="8627754" type="application/octet-stream" sparkle:edSignature="kj/XSJUqVUeAXent8B0QHlLAqb5UleaIaZYvpUdXAQenQEkj0WtRjEMBhbp4QZavGm98TwD+Pl4Rnuh/+8csAg=="/>
         </item>
-        <item>
-            <title>0.1.4</title>
-            <pubDate>Mon, 14 Sep 2026 13:37:14 +0800</pubDate>
-            <link>https://github.com/leoyoul/AgendAI/releases/tag/v0.1.4</link>
-            <sparkle:version>5</sparkle:version>
-            <sparkle:shortVersionString>0.1.4</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description sparkle:format="markdown"><![CDATA[## AgendAI 会小纪 0.1.4
-
-本版本优化全局界面交互和会议纪要阅读体验。
-
-### 界面与交互
-
-- 会议侧边栏支持搜索会议标题、状态和采集来源。
-- 会议列表增加右键菜单，可快速打开或归档会议。
-- 会议详情页将标题保存操作移至 macOS 工具栏。
-- 会议状态、空内容和缺失信息采用更明确的系统化呈现。
-
-### 结构化会议纪要
-
-- 原始纪要从等宽 Markdown 文本改为结构化文档视图。
-- 新增会议概览、摘要、议程、讨论过程、结论、未决事项、待办和时间节点分区。
-- 议题支持折叠/展开，待办和未决事项显示负责人、时间节点及状态。
-- 地点无可靠来源时显示“未记录”，未决事项责任人和时间无可靠来源时显示“待确认”。
-- Markdown 与 HTML 导出同步使用新版内容结构。
-
-### 兼容性与验证
-
-- 保留历史会议纪要缓存读取能力。
-- 未修改 AI 分析提示词、会议纪要生成提示词或 Agent 执行链路。
-- 通过 534 个 Swift 测试、macOS 构建和发布包检查。
-
-当前发布包使用本地 ad-hoc 签名，尚未使用 Apple Developer ID 或公证。首次打开时，macOS 可能要求右键选择“打开”，或在“系统设置 → 隐私与安全性”中确认。
-]]></description>
-            <enclosure url="https://github.com/leoyoul/AgendAI/releases/download/v0.1.4/AgendAI-v0.1.4-macOS-universal.dmg" length="8570640" type="application/octet-stream" sparkle:edSignature="Q8DBL9OFmarXYBMycMoNerS39iJPIMPFl7Uj0p2E/14AhsYWn7ap4oSL7+6/4saMR/njv4cM5trnGG58ArXhCw=="/>
-        </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: +0KE0si8Hukz2V6LHN3V1HI6Mv+wMohHkhdSFMqQPnNF9MIW/QvDtbq0LcgCaIXj62f+t8ToA++jrAjgnJP7CA==
-length: 5519
+edSignature: F5lnu9cHzBuj/ohCCLDQDRJRBCD8FPOPRUoKyBhtPr3zeVQSdCWfmDYMdYzbTmQS1Z6NPpFNsS00/q592HFTAw==
+length: 5439
 -->

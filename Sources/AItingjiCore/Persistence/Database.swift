@@ -204,6 +204,8 @@ public final class Database: @unchecked Sendable {
             "CREATE INDEX IF NOT EXISTS idx_agent_results_meeting_imported ON meeting_agent_results(meeting_id, imported_at DESC);",
             "CREATE INDEX IF NOT EXISTS idx_meeting_todos_meeting_status ON meeting_todos(meeting_id, confirmation_status, created_at);",
             "CREATE INDEX IF NOT EXISTS idx_meeting_todos_job ON meeting_todos(job_id);",
+            "CREATE INDEX IF NOT EXISTS idx_meeting_follow_ups_meeting_status ON meeting_follow_ups(meeting_id, status, updated_at);",
+            "CREATE INDEX IF NOT EXISTS idx_meeting_follow_ups_task ON meeting_follow_ups(task_id);",
             "CREATE INDEX IF NOT EXISTS idx_agent_chat_meeting_created ON meeting_agent_chat_messages(meeting_id, created_at);",
             "CREATE INDEX IF NOT EXISTS idx_meeting_notes_meeting_created ON meeting_notes(meeting_id, created_at);",
             "CREATE INDEX IF NOT EXISTS idx_meeting_note_images_note_created ON meeting_note_images(note_id, created_at);"
@@ -513,6 +515,28 @@ public final class Database: @unchecked Sendable {
         updated_at REAL NOT NULL,
         PRIMARY KEY(job_id, id),
         FOREIGN KEY(job_id) REFERENCES meeting_agent_jobs(id) ON DELETE CASCADE,
+        FOREIGN KEY(meeting_id) REFERENCES meetings(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS meeting_follow_ups (
+        id TEXT PRIMARY KEY,
+        meeting_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        project_name TEXT NOT NULL DEFAULT '',
+        execution_name TEXT NOT NULL DEFAULT '',
+        owner_name TEXT NOT NULL DEFAULT '',
+        planned_start TEXT NOT NULL DEFAULT '',
+        planned_end TEXT NOT NULL DEFAULT '',
+        source TEXT NOT NULL DEFAULT 'action',
+        status TEXT NOT NULL DEFAULT 'pending',
+        project_id TEXT,
+        execution_id TEXT,
+        owner_id TEXT,
+        task_id TEXT,
+        error_message TEXT,
+        matched_at REAL,
+        handed_off_at REAL,
+        updated_at REAL NOT NULL,
         FOREIGN KEY(meeting_id) REFERENCES meetings(id) ON DELETE CASCADE
     );
 

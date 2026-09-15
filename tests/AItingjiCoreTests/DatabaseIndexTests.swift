@@ -55,5 +55,5 @@ func databaseMigrateIsIdempotentForIndexes() throws {
     }
 
     let rows = try db.query("SELECT COUNT(*) AS c FROM sqlite_master WHERE type = 'index' AND name LIKE 'idx_%';")
-    #expect(rows.first?["c"]?.intValue == 16)
+    #expect(rows.first?["c"]?.intValue == 18)
 }

@@ -78,10 +78,11 @@ struct ZentaoMCPClient: Sendable {
         meeting: Meeting,
         minutes: MeetingMinutesDocument,
         source: ModelSource,
-        runtime: PiAgentRuntimeConfiguration
+        runtime: PiAgentRuntimeConfiguration,
+        mcpConfigURL: URL? = nil
     ) async throws -> ZentaoFollowUpMatchResult {
         let prompt = Self.matchPrompt(meeting: meeting, minutes: minutes)
-        let raw = try await responseGenerator(prompt, runtime.workingDirectoryURL, nil)
+        let raw = try await responseGenerator(prompt, runtime.workingDirectoryURL, mcpConfigURL)
         guard let data = Self.extractJSON(raw).data(using: .utf8) else { throw ZentaoMCPError.invalidResponse }
         return try JSONDecoder().decode(ZentaoFollowUpMatchResult.self, from: data)
     }
@@ -90,7 +91,8 @@ struct ZentaoMCPClient: Sendable {
         todo: ZentaoFollowUpTodo,
         meeting: Meeting,
         source: ModelSource,
-        runtime: PiAgentRuntimeConfiguration
+        runtime: PiAgentRuntimeConfiguration,
+        mcpConfigURL: URL? = nil
     ) async throws -> ZentaoFollowUpTodo {
         let request = """
         你是禅道 MCP 适配器。仅为不存在的任务创建禅道任务；已有任务必须原样返回并标记 status=handedOff。
@@ -98,7 +100,7 @@ struct ZentaoMCPClient: Sendable {
         输入会议：\(meeting.title)
         输入任务：\(String(data: try JSONEncoder().encode(todo), encoding: .utf8) ?? "{}")
         """
-        let raw = try await responseGenerator(request, runtime.workingDirectoryURL, nil)
+        let raw = try await responseGenerator(request, runtime.workingDirectoryURL, mcpConfigURL)
         guard let data = Self.extractJSON(raw).data(using: .utf8),
               let result = try? JSONDecoder().decode(ZentaoFollowUpTodo.self, from: data) else {
             throw ZentaoMCPError.invalidResponse

@@ -103,6 +103,7 @@ public final class AppPersistenceStore: @unchecked Sendable {
     private let meetingAgentJobs: MeetingAgentJobRepository
     private let meetingAgentResults: MeetingAgentResultRepository
     private let meetingTodos: MeetingTodoRepository
+    private let meetingFollowUps: MeetingFollowUpRepository
     private let meetingAgentChat: MeetingAgentChatRepository
     private let availabilityLock = NSLock()
     private var currentAvailability: AppPersistenceAvailability = .available
@@ -172,6 +173,7 @@ public final class AppPersistenceStore: @unchecked Sendable {
             meetingAgentJobs = MeetingAgentJobRepository(database: database)
             meetingAgentResults = MeetingAgentResultRepository(database: database)
             meetingTodos = MeetingTodoRepository(database: database)
+            meetingFollowUps = MeetingFollowUpRepository(database: database)
             meetingAgentChat = MeetingAgentChatRepository(database: database)
             try upgradeBackup.recordCurrentVersion()
         } catch {
@@ -510,8 +512,30 @@ public final class AppPersistenceStore: @unchecked Sendable {
                 "DELETE FROM export_jobs WHERE meeting_id = ?",
                 bindings: [.text(id)]
             )
+            try database.execute(
+                "DELETE FROM meeting_follow_ups WHERE meeting_id = ?",
+                bindings: [.text(id)]
+            )
             try meetings.delete(id: id)
         }
+    }
+
+    public func loadMeetingFollowUps(meetingID: Meeting.ID) throws -> [MeetingFollowUpRecord] {
+        try requireAvailable()
+        return try meetingFollowUps.list(meetingID: meetingID)
+    }
+
+    public func replaceMeetingFollowUps(
+        meetingID: Meeting.ID,
+        records: [MeetingFollowUpRecord]
+    ) throws {
+        try requireAvailable()
+        try meetingFollowUps.replace(meetingID: meetingID, records: records)
+    }
+
+    public func upsertMeetingFollowUp(_ record: MeetingFollowUpRecord) throws {
+        try requireAvailable()
+        try meetingFollowUps.upsert(record)
     }
 
     public func upsertPerson(_ person: VoiceprintPerson) throws {

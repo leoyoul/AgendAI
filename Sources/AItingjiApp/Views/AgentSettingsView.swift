@@ -61,7 +61,7 @@ struct AgentSettingsView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Agent 设置")
                     .font(.title2.bold())
-                Text("全局 Pi Agent · ~/.pi/agent")
+                Text("会议 Agent 兼容设置 · ~/.pi/agent")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

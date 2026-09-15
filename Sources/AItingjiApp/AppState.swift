@@ -504,22 +504,25 @@ final class AppState {
     }
 
     func handoffFollowUp(_ todo: ZentaoFollowUpTodo) {
-        guard let meeting = meetings.first(where: { $0.id == todo.meetingID }),
-              let source = defaultModelSource(type: .agent) else {
-            statusMessage = "请先配置可用的 Agent/MCP。"
+        guard let meeting = meetings.first(where: { $0.id == todo.meetingID }) else {
+            statusMessage = "找不到对应会议。"
             return
         }
         guard todo.status != .handedOff, !todo.title.isEmpty,
               todo.projectName != "待确认", todo.executionName != "待确认",
-              todo.ownerName != "待确认" else {
-            statusMessage = "任务名称、项目、执行和负责人必须先完成匹配。"
+              todo.ownerName != "待确认", !todo.plannedStart.isEmpty,
+              todo.plannedStart != "待确认", !todo.plannedEnd.isEmpty,
+              todo.plannedEnd != "待确认" else {
+            statusMessage = "任务名称、项目、执行、负责人和计划起止时间必须先完成匹配。"
             return
         }
         let runtime = meetingAgentRuntimeConfiguration(meeting: meeting)
+        let mcpConfigURL = makeZentaoMCPConfigURL()
         Task { [weak self] in
             guard let self else { return }
             do {
-                let result = try await self.zentaoMCPClient.create(todo: todo, meeting: meeting, source: source, runtime: runtime)
+                defer { if let mcpConfigURL { try? FileManager.default.removeItem(at: mcpConfigURL) } }
+                let result = try await self.zentaoMCPClient.create(todo: todo, meeting: meeting, source: self.defaultModelSource(type: .agent) ?? ModelSource(id: "claude-code", type: .agent, name: "Claude Code", baseURL: ""), runtime: runtime, mcpConfigURL: mcpConfigURL)
                 self.updateFollowUp(result)
                 self.statusMessage = "已交接任务“\(todo.title)”到禅道。"
             } catch {
@@ -536,19 +539,24 @@ final class AppState {
 
     private func matchFollowUps(meetingID: Meeting.ID) {
         guard let meeting = meetings.first(where: { $0.id == meetingID }),
-              let minutes = meetingMinutesArtifacts[meetingID]?.document,
-              let source = defaultModelSource(type: .agent) else {
-            followUpErrorsByMeeting[meetingID] = "请先生成会议纪要并配置可用的 Agent/MCP。"
+              let minutes = meetingMinutesArtifacts[meetingID]?.document else {
+            followUpErrorsByMeeting[meetingID] = "请先生成会议纪要。"
+            return
+        }
+        guard zentaoConfiguration.enabled else {
+            followUpErrorsByMeeting[meetingID] = "未启用禅道 MCP，请在设置 > 外部系统中配置。"
             return
         }
         guard followUpMatchingMeetingIDs.insert(meetingID).inserted else { return }
         followUpErrorsByMeeting[meetingID] = nil
         let runtime = meetingAgentRuntimeConfiguration(meeting: meeting)
+        let mcpConfigURL = makeZentaoMCPConfigURL()
         Task { [weak self] in
             guard let self else { return }
             defer { self.followUpMatchingMeetingIDs.remove(meetingID) }
             do {
-                let result = try await self.zentaoMCPClient.match(meeting: meeting, minutes: minutes, source: source, runtime: runtime)
+                defer { if let mcpConfigURL { try? FileManager.default.removeItem(at: mcpConfigURL) } }
+                let result = try await self.zentaoMCPClient.match(meeting: meeting, minutes: minutes, source: self.defaultModelSource(type: .agent) ?? ModelSource(id: "claude-code", type: .agent, name: "Claude Code", baseURL: ""), runtime: runtime, mcpConfigURL: mcpConfigURL)
                 self.followUpsByMeeting[meetingID] = result.todos
                 self.persistFollowUps()
                 self.statusMessage = "会后待办已根据禅道数据重新生成。"
@@ -571,12 +579,27 @@ final class AppState {
     }
 
     private func restoreFollowUps() {
+        if let store {
+            var restored: [Meeting.ID: [ZentaoFollowUpTodo]] = [:]
+            for meeting in meetings {
+                if let records = try? store.loadMeetingFollowUps(meetingID: meeting.id), !records.isEmpty {
+                    restored[meeting.id] = records.compactMap(Self.followUpTodo(from:))
+                }
+            }
+            if !restored.isEmpty {
+                followUpsByMeeting = restored
+                return
+            }
+        }
         guard let data = try? Data(contentsOf: Self.followUpsURL),
               let decoded = try? JSONDecoder().decode([Meeting.ID: [ZentaoFollowUpTodo]].self, from: data) else { return }
         followUpsByMeeting = decoded
+        // 兼容旧版本 JSON；成功写入 SQLite 后仍保留 JSON 作为可恢复备份。
+        persistFollowUpsToSQLite()
     }
 
     private func persistFollowUps() {
+        persistFollowUpsToSQLite()
         do {
             try FileManager.default.createDirectory(at: Self.followUpsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             let data = try JSONEncoder().encode(followUpsByMeeting)
@@ -584,6 +607,58 @@ final class AppState {
         } catch {
             appendDebugLog(category: "禅道", message: "会后待办保存失败：\(error.localizedDescription)")
         }
+    }
+
+    private func persistFollowUpsToSQLite() {
+        guard let store else { return }
+        do {
+            for (meetingID, todos) in followUpsByMeeting {
+                try store.replaceMeetingFollowUps(
+                    meetingID: meetingID,
+                    records: todos.map(Self.followUpRecord(from:))
+                )
+            }
+        } catch {
+            appendDebugLog(category: "禅道", message: "SQLite 会后待办保存失败：\(error.localizedDescription)")
+        }
+    }
+
+    private static func followUpRecord(from todo: ZentaoFollowUpTodo) -> MeetingFollowUpRecord {
+        MeetingFollowUpRecord(
+            id: todo.id, meetingID: todo.meetingID, title: todo.title,
+            projectName: todo.projectName, executionName: todo.executionName,
+            ownerName: todo.ownerName, plannedStart: todo.plannedStart,
+            plannedEnd: todo.plannedEnd, source: todo.source.rawValue,
+            status: todo.status.rawValue, projectID: todo.projectID,
+            executionID: todo.executionID, ownerID: todo.ownerID, taskID: todo.taskID,
+            errorMessage: todo.errorMessage, matchedAt: todo.status == .matched ? todo.updatedAt : nil,
+            handedOffAt: todo.status == .handedOff ? todo.updatedAt : nil, updatedAt: todo.updatedAt
+        )
+    }
+
+    private static func followUpTodo(from record: MeetingFollowUpRecord) -> ZentaoFollowUpTodo? {
+        guard let source = FollowUpSource(rawValue: record.source),
+              let status = FollowUpMatchStatus(rawValue: record.status) else { return nil }
+        return ZentaoFollowUpTodo(
+            id: record.id, meetingID: record.meetingID, title: record.title,
+            projectName: record.projectName, executionName: record.executionName,
+            ownerName: record.ownerName, plannedStart: record.plannedStart,
+            plannedEnd: record.plannedEnd, source: source, status: status,
+            projectID: record.projectID, executionID: record.executionID,
+            ownerID: record.ownerID, taskID: record.taskID,
+            errorMessage: record.errorMessage, updatedAt: record.updatedAt
+        )
+    }
+
+    private func makeZentaoMCPConfigURL() -> URL? {
+        let endpoint = zentaoConfiguration.mcpEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !endpoint.isEmpty else { return nil }
+        return try? ClaudeCodeMCPConfigurationWriter().write(
+            configuration: ClaudeCodeMCPConfiguration(
+                endpoint: endpoint,
+                transport: zentaoConfiguration.mcpTransport
+            )
+        )
     }
 
     @discardableResult
@@ -2548,7 +2623,10 @@ final class AppState {
             return false
         }
         zentaoConfiguration = value
-        if let data = try? JSONEncoder().encode(value), let encoded = String(data: data, encoding: .utf8) {
+        // Claude Code 通过用户环境变量读取 MCP Token；不把 Token 写入 SQLite/app_settings。
+        var persistedValue = value
+        persistedValue.token = ""
+        if let data = try? JSONEncoder().encode(persistedValue), let encoded = String(data: data, encoding: .utf8) {
             persistAppSetting(AppSettingKey.zentaoConfiguration, value: encoded)
         }
         statusMessage = "禅道配置已保存。"
