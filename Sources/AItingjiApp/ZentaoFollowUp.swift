@@ -41,6 +41,68 @@ struct ZentaoFollowUpTodo: Codable, Identifiable, Equatable, Sendable {
     var taskID: String?
     var errorMessage: String?
     var updatedAt: Date
+
+    init(
+        id: String,
+        meetingID: Meeting.ID,
+        title: String,
+        projectName: String,
+        executionName: String,
+        ownerName: String,
+        plannedStart: String,
+        plannedEnd: String,
+        source: FollowUpSource,
+        status: FollowUpMatchStatus,
+        projectID: String? = nil,
+        executionID: String? = nil,
+        ownerID: String? = nil,
+        taskID: String? = nil,
+        errorMessage: String? = nil,
+        updatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.meetingID = meetingID
+        self.title = title
+        self.projectName = projectName
+        self.executionName = executionName
+        self.ownerName = ownerName
+        self.plannedStart = plannedStart
+        self.plannedEnd = plannedEnd
+        self.source = source
+        self.status = status
+        self.projectID = projectID
+        self.executionID = executionID
+        self.ownerID = ownerID
+        self.taskID = taskID
+        self.errorMessage = errorMessage
+        self.updatedAt = updatedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, meetingID, title, projectName, executionName, ownerName
+        case plannedStart, plannedEnd, source, status
+        case projectID, executionID, ownerID, taskID, errorMessage, updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id)
+        meetingID = try values.decode(String.self, forKey: .meetingID)
+        title = try values.decode(String.self, forKey: .title)
+        projectName = try values.decode(String.self, forKey: .projectName)
+        executionName = try values.decode(String.self, forKey: .executionName)
+        ownerName = try values.decode(String.self, forKey: .ownerName)
+        plannedStart = try values.decode(String.self, forKey: .plannedStart)
+        plannedEnd = try values.decode(String.self, forKey: .plannedEnd)
+        source = try values.decode(FollowUpSource.self, forKey: .source)
+        status = try values.decode(FollowUpMatchStatus.self, forKey: .status)
+        projectID = try values.decodeIfPresent(String.self, forKey: .projectID)
+        executionID = try values.decodeIfPresent(String.self, forKey: .executionID)
+        ownerID = try values.decodeIfPresent(String.self, forKey: .ownerID)
+        taskID = try values.decodeIfPresent(String.self, forKey: .taskID)
+        errorMessage = try values.decodeIfPresent(String.self, forKey: .errorMessage)
+        updatedAt = try values.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
+    }
 }
 
 struct ZentaoFollowUpMatchResult: Codable, Sendable {
@@ -66,10 +128,17 @@ enum ZentaoMCPError: LocalizedError, Sendable {
 struct ZentaoMCPClient: Sendable {
     typealias ResponseGenerator = @Sendable (String, URL, URL?) async throws -> String
 
+    static let defaultTimeout: Duration = .seconds(600)
+
     private let responseGenerator: ResponseGenerator
 
     init(responseGenerator: @escaping ResponseGenerator = { prompt, workingDirectory, mcpConfigURL in
-        try await ClaudeCodeClient().run(prompt: prompt, workingDirectory: workingDirectory, mcpConfigURL: mcpConfigURL)
+        try await ClaudeCodeClient().run(
+            prompt: prompt,
+            workingDirectory: workingDirectory,
+            mcpConfigURL: mcpConfigURL,
+            timeout: Self.defaultTimeout
+        )
     }) {
         self.responseGenerator = responseGenerator
     }
@@ -84,7 +153,7 @@ struct ZentaoMCPClient: Sendable {
         let prompt = Self.matchPrompt(meeting: meeting, minutes: minutes)
         let raw = try await responseGenerator(prompt, runtime.workingDirectoryURL, mcpConfigURL)
         guard let data = Self.extractJSON(raw).data(using: .utf8) else { throw ZentaoMCPError.invalidResponse }
-        return try JSONDecoder().decode(ZentaoFollowUpMatchResult.self, from: data)
+        return try Self.decoder().decode(ZentaoFollowUpMatchResult.self, from: data)
     }
 
     func create(
@@ -102,7 +171,7 @@ struct ZentaoMCPClient: Sendable {
         """
         let raw = try await responseGenerator(request, runtime.workingDirectoryURL, mcpConfigURL)
         guard let data = Self.extractJSON(raw).data(using: .utf8),
-              let result = try? JSONDecoder().decode(ZentaoFollowUpTodo.self, from: data) else {
+              let result = try? Self.decoder().decode(ZentaoFollowUpTodo.self, from: data) else {
             throw ZentaoMCPError.invalidResponse
         }
         return result
@@ -125,5 +194,24 @@ struct ZentaoMCPClient: Sendable {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let first = trimmed.firstIndex(of: "{"), let last = trimmed.lastIndex(of: "}") else { return trimmed }
         return String(trimmed[first...last])
+    }
+
+    private static func decoder() -> JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            if let seconds = try? container.decode(Double.self) {
+                return Date(timeIntervalSince1970: seconds)
+            }
+            let value = try container.decode(String.self)
+            if let date = ISO8601DateFormatter().date(from: value) {
+                return date
+            }
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "不是有效的 ISO8601 日期：\(value)"
+            )
+        }
+        return decoder
     }
 }

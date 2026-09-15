@@ -6,6 +6,38 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>AgendAI 会小纪</title>
         <item>
+            <title>0.1.7-dev.3</title>
+            <pubDate>Tue, 15 Sep 2026 18:03:42 +0800</pubDate>
+            <link>https://github.com/leoyoul/AgendAI/releases/tag/v0.1.7-dev.3</link>
+            <sparkle:version>10</sparkle:version>
+            <sparkle:shortVersionString>0.1.7-dev.3</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description sparkle:format="markdown"><![CDATA[# AgendAI 会小纪 v0.1.7-dev.3
+
+这是用于 Claude Code 与禅道 MCP 联调的开发预览版，不是正式稳定版。
+
+## 本版本
+
+- 修复会后待办匹配时临时 MCP 配置覆盖 Claude Code 用户级认证的问题；未提供 `ZENTAO_MCP_TOKEN` 时优先复用用户级 `zentao` 配置。
+- 将会后待办匹配默认超时调整为 600 秒，并保留短超时测试能力。
+- 诊断详情增加配置来源、CLI 路径、执行阶段、退出码、MCP 名称、超时类型和脱敏后的 stderr。
+- 将 MCP 连接失败、未认证、非法 JSON、请求超时和进程退出区分展示，失败后保留已有待办并支持重试。
+- 临时 MCP 配置只引用环境变量，不保存 Token 到项目文件、数据库或日志。
+- 保持会议纪要/AI 分析模型配置与 Claude Code 模型配置相互独立。
+- 通过 559 个 Swift 测试和 Swift 构建验证。
+
+## 已知限制
+
+- 禅道真实字段映射和实际创建任务操作仍需在公司网络内使用测试会议确认。
+- 会议纪要和 AI 分析的既有 Pi 调用链未在本版迁移。
+
+## 安装
+
+下载 `AgendAI-v0.1.7-dev.3-macOS-universal.dmg`，将“AgendAI 会小纪”拖入 Applications。首次打开时，macOS 可能要求右键选择“打开”，或在“系统设置 → 隐私与安全性”中确认。
+]]></description>
+            <enclosure url="https://github.com/leoyoul/AgendAI/releases/download/v0.1.7-dev.3/AgendAI-v0.1.7-dev.3-macOS-universal.dmg" length="8994747" type="application/octet-stream" sparkle:edSignature="ghRkG4a+WfXxMDM8gXl/Wqz5wxxBe7+fDoIaUrLlwjRSEVUhiVz/8UUxWGD2C4m60IW/HFByoYLG41j5SF6fAw=="/>
+        </item>
+        <item>
             <title>0.1.7-dev.2</title>
             <pubDate>Tue, 15 Sep 2026 15:32:09 +0800</pubDate>
             <link>https://github.com/leoyoul/AgendAI/releases/tag/v0.1.7-dev.2</link>
@@ -62,41 +94,9 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
 ]]></description>
             <enclosure url="https://github.com/leoyoul/AgendAI/releases/download/v0.1.6/AgendAI-v0.1.6-macOS-universal.dmg" length="8646570" type="application/octet-stream" sparkle:edSignature="lsQrhTJVDI97jUXfyiBDeiGQHGA25XqnosD5Q6YZzhsQiyDxnu8sd2TZ+KYWfcHWTKrHiVuAKZFlcYwzHWDbDA=="/>
         </item>
-        <item>
-            <title>0.1.5</title>
-            <pubDate>Mon, 14 Sep 2026 15:41:23 +0800</pubDate>
-            <link>https://github.com/leoyoul/AgendAI/releases/tag/v0.1.5</link>
-            <sparkle:version>6</sparkle:version>
-            <sparkle:shortVersionString>0.1.5</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description sparkle:format="markdown"><![CDATA[## AgendAI 会小纪 0.1.5
-
-### 导航与设置
-
-- 新增“设置”一级菜单及二级设置入口。
-- “新建会议”和“日历”保留在一级菜单。
-- 新增“设置 > 外部系统 > 禅道”。
-
-### 会议纪要与任务交接
-
-- 用户界面统一使用“会议纪要”名称。
-- 会议纪要中的待办和未决事项支持生成禅道交接草稿。
-- AI 分析待办支持同样的交接入口。
-- 交接内容会复制到剪贴板并打开禅道，由用户确认后创建，不会未经确认自动创建任务。
-
-### 禅道配置
-
-- 禅道地址支持内网 IP、局域网域名和公网 HTTPS 域名。
-- 支持配置账号和个人 API Token。
-- 保存配置时校验 `http://` 或 `https://` 地址。
-
-当前发布包使用本地 ad-hoc 签名，尚未使用 Apple Developer ID 或公证。
-]]></description>
-            <enclosure url="https://github.com/leoyoul/AgendAI/releases/download/v0.1.5/AgendAI-v0.1.5-macOS-universal.dmg" length="8627754" type="application/octet-stream" sparkle:edSignature="kj/XSJUqVUeAXent8B0QHlLAqb5UleaIaZYvpUdXAQenQEkj0WtRjEMBhbp4QZavGm98TwD+Pl4Rnuh/+8csAg=="/>
-        </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: F5lnu9cHzBuj/ohCCLDQDRJRBCD8FPOPRUoKyBhtPr3zeVQSdCWfmDYMdYzbTmQS1Z6NPpFNsS00/q592HFTAw==
-length: 5439
+edSignature: SgU5Z/Q91h5Vr7AzK5QT7tHJeT5CtVgR3/Zqrc5ABSn3SjP1uAywRIaDW7iDMQ/1aA7hFXrPm+BQUc8EacQ6Dw==
+length: 5969
 -->

@@ -378,12 +378,25 @@ struct MeetingDetailView: View {
                     ProgressView().controlSize(.small)
                     Text("匹配中").font(.caption).foregroundStyle(.secondary)
                 }
+                if let source = appState.followUpConfigurationSourcesByMeeting[meeting.id] {
+                    Text("配置：\(source.displayName)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Button {
                     appState.regenerateSelectedMeetingFollowUps()
                 } label: {
                     Label("重新生成", systemImage: "arrow.clockwise")
                 }
-                .disabled(appState.selectedMeetingMinutesArtifact == nil || appState.isMatchingSelectedMeetingFollowUps || (!appState.selectedMeetingFollowUps.isEmpty && appState.followUpErrorsByMeeting[meeting.id] == nil))
+                .disabled(
+                    appState.selectedMeetingMinutesArtifact == nil
+                        || appState.isMatchingSelectedMeetingFollowUps
+                        || (
+                            !appState.selectedMeetingFollowUps.isEmpty
+                                && appState.followUpErrorsByMeeting[meeting.id] == nil
+                                && !appState.selectedMeetingFollowUps.contains(where: { $0.status == .failed })
+                        )
+                )
                 Button {
                     appState.handoffAllSelectedMeetingFollowUps()
                 } label: {
@@ -457,9 +470,34 @@ struct MeetingDetailView: View {
             VStack(alignment: .leading, spacing: 16) {
                 Label("会后待办诊断详情", systemImage: "stethoscope")
                     .font(.title2.bold())
-                Text(appState.followUpErrorsByMeeting[meeting.id] ?? "暂无诊断信息")
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                if let diagnostic = appState.followUpDiagnosticsByMeeting[meeting.id] {
+                    LabeledContent("原因", value: diagnostic.summary)
+                    LabeledContent("执行阶段", value: diagnostic.phase)
+                    LabeledContent("CLI 路径", value: diagnostic.executablePath ?? "未解析")
+                    LabeledContent("退出码", value: diagnostic.exitCode.map(String.init) ?? "无")
+                    LabeledContent("MCP", value: diagnostic.mcpName ?? "zentao")
+                    LabeledContent("配置来源", value: diagnostic.configurationSource?.displayName ?? "未知")
+                    if let timeoutKind = diagnostic.timeoutKind {
+                        LabeledContent("超时类型", value: timeoutKind.displayName)
+                    }
+                    LabeledContent("超时", value: "\(diagnostic.timeoutSeconds) 秒")
+                    if !diagnostic.stderr.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("stderr")
+                                .font(.headline)
+                            Text(diagnostic.stderr)
+                                .font(.system(.caption, design: .monospaced))
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(8)
+                                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+                        }
+                    }
+                } else {
+                    Text(appState.followUpErrorsByMeeting[meeting.id] ?? "暂无诊断信息")
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
                 Text("诊断信息不会包含 Token 或 Authorization Header。网络恢复后可点击“重新生成”重试。")
                     .font(.caption)
                     .foregroundStyle(.secondary)

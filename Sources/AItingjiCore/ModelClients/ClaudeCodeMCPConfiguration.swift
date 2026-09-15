@@ -14,6 +14,30 @@ public struct ClaudeCodeMCPConfiguration: Codable, Equatable, Sendable {
     }
 }
 
+public enum ClaudeCodeMCPConfigurationSource: String, Codable, Equatable, Sendable {
+    case userProfile
+    case temporary
+
+    public var displayName: String {
+        switch self {
+        case .userProfile: "Claude Code 用户级配置（回退）"
+        case .temporary: "会话级临时配置"
+        }
+    }
+}
+
+public struct ClaudeCodeMCPConfigurationSelection: Equatable, Sendable {
+    public var source: ClaudeCodeMCPConfigurationSource
+    public var configURL: URL?
+    public var reason: String
+
+    public init(source: ClaudeCodeMCPConfigurationSource, configURL: URL? = nil, reason: String) {
+        self.source = source
+        self.configURL = configURL
+        self.reason = reason
+    }
+}
+
 public enum ClaudeCodeMCPConfigurationError: Error, Equatable, LocalizedError, Sendable {
     case invalidEndpoint
     case unsupportedTransport(String)
@@ -43,9 +67,64 @@ public struct ClaudeCodeMCPConfigurationWriter: Sendable {
         }
         let root: [String: Any] = ["mcpServers": [configuration.name: server]]
         let data = try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
         let fileURL = directory.appendingPathComponent("ai-tingji-claude-mcp-\(UUID().uuidString).json")
         try data.write(to: fileURL, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
         return fileURL
+    }
+}
+
+/// 只在调用进程明确提供 Token 时生成临时配置；否则让 Claude Code 使用其用户级配置。
+public struct ClaudeCodeMCPConfigurationResolver: Sendable {
+    private let environment: [String: String]
+    private let tokenEnvironmentVariable: String
+
+    public init(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        tokenEnvironmentVariable: String = "ZENTAO_MCP_TOKEN"
+    ) {
+        self.environment = environment
+        self.tokenEnvironmentVariable = tokenEnvironmentVariable
+    }
+
+    public func resolve(
+        endpoint: String,
+        transport: String,
+        directory: URL = FileManager.default.temporaryDirectory
+    ) throws -> ClaudeCodeMCPConfigurationSelection {
+        let trimmedEndpoint = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedEndpoint.isEmpty else {
+            return ClaudeCodeMCPConfigurationSelection(
+                source: .userProfile,
+                reason: "未提供应用级 MCP 地址，使用 Claude Code 用户级配置。"
+            )
+        }
+
+        let token = environment[tokenEnvironmentVariable]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !token.isEmpty else {
+            return ClaudeCodeMCPConfigurationSelection(
+                source: .userProfile,
+                reason: "未检测到 \(tokenEnvironmentVariable)，使用 Claude Code 用户级配置。"
+            )
+        }
+
+        let configURL = try ClaudeCodeMCPConfigurationWriter().write(
+            configuration: ClaudeCodeMCPConfiguration(
+                endpoint: trimmedEndpoint,
+                transport: transport,
+                tokenEnvironmentVariable: tokenEnvironmentVariable
+            ),
+            directory: directory
+        )
+        return ClaudeCodeMCPConfigurationSelection(
+            source: .temporary,
+            configURL: configURL,
+            reason: "检测到环境变量，使用会话级临时 MCP 配置。"
+        )
     }
 }

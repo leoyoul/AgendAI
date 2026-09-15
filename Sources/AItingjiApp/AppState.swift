@@ -48,6 +48,7 @@ final class AppState {
     private let meetingMinutesGenerator: MeetingMinutesGenerator
     private let meetingAnalysisGenerator: MeetingAnalysisGenerator
     private let zentaoMCPClient: ZentaoMCPClient
+    private let zentaoMCPConfigurationResolver: ClaudeCodeMCPConfigurationResolver
     private let debugLogStore: AppDebugLogStore
     private let permissionService = PermissionService()
     private var activeCapture: AudioCaptureSession?
@@ -122,6 +123,8 @@ final class AppState {
     private(set) var followUpsByMeeting: [Meeting.ID: [ZentaoFollowUpTodo]] = [:]
     private(set) var followUpMatchingMeetingIDs: Set<Meeting.ID> = []
     private(set) var followUpErrorsByMeeting: [Meeting.ID: String] = [:]
+    private(set) var followUpDiagnosticsByMeeting: [Meeting.ID: ClaudeCodeDiagnostic] = [:]
+    private(set) var followUpConfigurationSourcesByMeeting: [Meeting.ID: ClaudeCodeMCPConfigurationSource] = [:]
     private(set) var generatingMeetingAnalysisIDs: Set<Meeting.ID> = []
     @ObservationIgnored private var meetingAnalysisTasks: [Meeting.ID: Task<Void, Never>] = [:]
     var statusMessage = "正在加载本地数据。"
@@ -322,11 +325,13 @@ final class AppState {
         meetingMinutesGenerator: MeetingMinutesGenerator = MeetingMinutesGenerator(),
         meetingAnalysisGenerator: MeetingAnalysisGenerator = MeetingAnalysisGenerator(),
         zentaoMCPClient: ZentaoMCPClient = ZentaoMCPClient(),
+        zentaoMCPConfigurationResolver: ClaudeCodeMCPConfigurationResolver = ClaudeCodeMCPConfigurationResolver(),
         debugLogStore: AppDebugLogStore = AppDebugLogStore()
     ) {
         self.meetingMinutesGenerator = meetingMinutesGenerator
         self.meetingAnalysisGenerator = meetingAnalysisGenerator
         self.zentaoMCPClient = zentaoMCPClient
+        self.zentaoMCPConfigurationResolver = zentaoMCPConfigurationResolver
         self.debugLogStore = debugLogStore
         pendingTranscriptionQueue = try? PendingTranscriptionQueue(
             rootDirectoryURL: pendingTranscriptionRootURL ?? Self.pendingTranscriptionRootURL
@@ -464,6 +469,15 @@ final class AppState {
                 value: PostprocessPrompt.meetingMinutesPromptVersion
             )
         }
+        if !zentaoConfiguration.token.isEmpty {
+            // 清理旧版本可能写入 app_settings 的禅道 Token。当前流程完全交给
+            // Claude Code 用户级认证或环境变量，数据库中不再保留该凭证。
+            zentaoConfiguration.token = ""
+            if let data = try? JSONEncoder().encode(zentaoConfiguration),
+               let encoded = String(data: data, encoding: .utf8) {
+                persistAppSetting(AppSettingKey.zentaoConfiguration, value: encoded)
+            }
+        }
         removeGeneratedPlaceholderAliasesIfNeeded()
         pruneStalePostprocessRecoveryMarkers()
         recoverInterruptedMeetingsIfNeeded()
@@ -517,7 +531,16 @@ final class AppState {
             return
         }
         let runtime = meetingAgentRuntimeConfiguration(meeting: meeting)
-        let mcpConfigURL = makeZentaoMCPConfigURL()
+        let selection: ClaudeCodeMCPConfigurationSelection
+        do {
+            selection = try makeZentaoMCPConfigSelection()
+        } catch {
+            followUpErrorsByMeeting[meeting.id] = error.localizedDescription
+            followUpDiagnosticsByMeeting[meeting.id] = diagnostic(for: error, source: nil, phase: "configuration")
+            return
+        }
+        followUpConfigurationSourcesByMeeting[meeting.id] = selection.source
+        let mcpConfigURL = selection.configURL
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -527,6 +550,7 @@ final class AppState {
                 self.statusMessage = "已交接任务“\(todo.title)”到禅道。"
             } catch {
                 self.statusMessage = "禅道交接失败：\(error.localizedDescription)"
+                self.followUpDiagnosticsByMeeting[meeting.id] = self.diagnostic(for: error, source: selection.source, phase: "handoff")
             }
         }
     }
@@ -550,7 +574,17 @@ final class AppState {
         guard followUpMatchingMeetingIDs.insert(meetingID).inserted else { return }
         followUpErrorsByMeeting[meetingID] = nil
         let runtime = meetingAgentRuntimeConfiguration(meeting: meeting)
-        let mcpConfigURL = makeZentaoMCPConfigURL()
+        let selection: ClaudeCodeMCPConfigurationSelection
+        do {
+            selection = try makeZentaoMCPConfigSelection()
+        } catch {
+            followUpMatchingMeetingIDs.remove(meetingID)
+            followUpErrorsByMeeting[meetingID] = error.localizedDescription
+            followUpDiagnosticsByMeeting[meetingID] = diagnostic(for: error, source: nil, phase: "configuration")
+            return
+        }
+        followUpConfigurationSourcesByMeeting[meetingID] = selection.source
+        let mcpConfigURL = selection.configURL
         Task { [weak self] in
             guard let self else { return }
             defer { self.followUpMatchingMeetingIDs.remove(meetingID) }
@@ -558,10 +592,12 @@ final class AppState {
                 defer { if let mcpConfigURL { try? FileManager.default.removeItem(at: mcpConfigURL) } }
                 let result = try await self.zentaoMCPClient.match(meeting: meeting, minutes: minutes, source: self.defaultModelSource(type: .agent) ?? ModelSource(id: "claude-code", type: .agent, name: "Claude Code", baseURL: ""), runtime: runtime, mcpConfigURL: mcpConfigURL)
                 self.followUpsByMeeting[meetingID] = result.todos
+                self.followUpDiagnosticsByMeeting[meetingID] = nil
                 self.persistFollowUps()
                 self.statusMessage = "会后待办已根据禅道数据重新生成。"
             } catch {
                 self.followUpErrorsByMeeting[meetingID] = error.localizedDescription
+                self.followUpDiagnosticsByMeeting[meetingID] = self.diagnostic(for: error, source: selection.source, phase: "matching")
                 self.statusMessage = "会后待办匹配失败，可稍后重新生成：\(error.localizedDescription)"
             }
         }
@@ -650,15 +686,31 @@ final class AppState {
         )
     }
 
-    private func makeZentaoMCPConfigURL() -> URL? {
-        let endpoint = zentaoConfiguration.mcpEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !endpoint.isEmpty else { return nil }
-        return try? ClaudeCodeMCPConfigurationWriter().write(
-            configuration: ClaudeCodeMCPConfiguration(
-                endpoint: endpoint,
-                transport: zentaoConfiguration.mcpTransport
-            )
+    private func makeZentaoMCPConfigSelection() throws -> ClaudeCodeMCPConfigurationSelection {
+        try zentaoMCPConfigurationResolver.resolve(
+            endpoint: zentaoConfiguration.mcpEndpoint,
+            transport: zentaoConfiguration.mcpTransport
         )
+    }
+
+    private func diagnostic(
+        for error: Error,
+        source: ClaudeCodeMCPConfigurationSource?,
+        phase: String
+    ) -> ClaudeCodeDiagnostic {
+        var diagnostic: ClaudeCodeDiagnostic
+        if let error = error as? ClaudeCodeClientError {
+            diagnostic = error.diagnostic
+        } else {
+            diagnostic = ClaudeCodeDiagnostic(phase: phase, summary: error.localizedDescription)
+        }
+        diagnostic.phase = phase == "matching" && diagnostic.phase == "process" ? "matching.process" : diagnostic.phase
+        if diagnostic.executablePath == nil {
+            diagnostic.executablePath = ClaudeCodeClient.executableURL()?.path
+        }
+        diagnostic.configurationSource = source
+        diagnostic.mcpName = "zentao"
+        return diagnostic
     }
 
     @discardableResult
@@ -2622,11 +2674,10 @@ final class AppState {
             statusMessage = "禅道地址无效，请填写完整的 http:// 或 https:// 地址。"
             return false
         }
+        value.token = ""
         zentaoConfiguration = value
         // Claude Code 通过用户环境变量读取 MCP Token；不把 Token 写入 SQLite/app_settings。
-        var persistedValue = value
-        persistedValue.token = ""
-        if let data = try? JSONEncoder().encode(persistedValue), let encoded = String(data: data, encoding: .utf8) {
+        if let data = try? JSONEncoder().encode(value), let encoded = String(data: data, encoding: .utf8) {
             persistAppSetting(AppSettingKey.zentaoConfiguration, value: encoded)
         }
         statusMessage = "禅道配置已保存。"

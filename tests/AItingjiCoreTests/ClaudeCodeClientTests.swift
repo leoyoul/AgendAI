@@ -71,6 +71,129 @@ struct ClaudeCodeClientTests {
         #expect(!error.localizedDescription.contains("secret-token"))
         #expect(!error.localizedDescription.contains("another-secret"))
     }
+
+    @Test("runs Claude Code with the non-interactive JSON arguments")
+    func defaultProcessPassesExpectedArguments() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let script = root.appendingPathComponent("mock-claude.sh")
+        let argumentsFile = root.appendingPathComponent("arguments.txt")
+        let scriptText = "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"" + argumentsFile.path + "\"\nprintf '%s' '{\"result\":\"ok\"}'\n"
+        try Data(scriptText.utf8).write(to: script)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
+
+        let mcpURL = root.appendingPathComponent("mcp.json")
+        let configuration = ClaudeCodeProcessConfiguration(
+            prompt: "匹配禅道",
+            workingDirectory: root,
+            executableURL: script,
+            mcpConfigURL: mcpURL,
+            maxTurns: 4,
+            model: "sonnet",
+            permissionMode: "acceptEdits",
+            timeout: .seconds(2)
+        )
+        let result = try await ClaudeCodeClient.defaultResponse(configuration)
+        #expect(result == "ok")
+        let arguments = try String(contentsOf: argumentsFile, encoding: .utf8)
+        #expect(arguments.contains("-p\n匹配禅道"))
+        #expect(arguments.contains("--output-format\njson"))
+        #expect(arguments.contains("--max-turns\n4"))
+        #expect(arguments.contains("--model\nsonnet"))
+        #expect(arguments.contains("--permission-mode\nacceptEdits"))
+        #expect(arguments.contains("--mcp-config\n\(mcpURL.path)"))
+    }
+
+    @Test("terminates a stalled Claude Code process and returns timeout diagnostics")
+    func terminatesStalledProcess() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let script = root.appendingPathComponent("mock-claude-sleep.sh")
+        try Data("#!/bin/sh\nsleep 5\n".utf8).write(to: script)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
+
+        let configuration = ClaudeCodeProcessConfiguration(
+            prompt: "匹配禅道",
+            workingDirectory: root,
+            executableURL: script,
+            mcpConfigURL: nil,
+            maxTurns: 1,
+            model: nil,
+            permissionMode: nil,
+            timeout: .milliseconds(40)
+        )
+        do {
+            _ = try await ClaudeCodeClient.defaultResponse(configuration)
+            Issue.record("预期 Claude Code 超时")
+        } catch let error as ClaudeCodeClientError {
+            guard case .timedOutWithDiagnostics(let diagnostic) = error else {
+                Issue.record("收到非预期错误：\(error.localizedDescription)")
+                return
+            }
+            #expect(diagnostic.executablePath == script.path)
+            #expect(diagnostic.timeoutKind == .mcpQuery)
+            #expect(diagnostic.timeoutSeconds == 1)
+            #expect(diagnostic.phase == "timeout.mcp_query")
+        }
+    }
+
+    @Test("maps a non-zero MCP process with 401 diagnostics and redacts credentials")
+    func mapsMCPProcessFailure() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let script = root.appendingPathComponent("mock-claude-failure.sh")
+        try Data("#!/bin/sh\necho 'MCP HTTP 401 Authorization: Bearer secret-token' >&2\nexit 7\n".utf8).write(to: script)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
+        let configuration = ClaudeCodeProcessConfiguration(
+            prompt: "匹配禅道", workingDirectory: root, executableURL: script,
+            mcpConfigURL: nil, maxTurns: 1, model: nil, permissionMode: nil,
+            timeout: .seconds(2)
+        )
+
+        do {
+            _ = try await ClaudeCodeClient.defaultResponse(configuration)
+            Issue.record("预期 MCP 连接失败")
+        } catch let error as ClaudeCodeClientError {
+            guard case .mcpUnavailableWithDiagnostics(let diagnostic) = error else {
+                Issue.record("收到非预期错误：\(error.localizedDescription)")
+                return
+            }
+            #expect(diagnostic.exitCode == 7)
+            #expect(diagnostic.mcpName == "zentao")
+            #expect(diagnostic.possibleMCPConnectionError)
+            #expect(!diagnostic.stderr.contains("secret-token"))
+        }
+    }
+
+    @Test("keeps CLI and stderr details when JSON output is invalid")
+    func mapsInvalidJSONWithDiagnostics() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let script = root.appendingPathComponent("mock-claude-invalid.sh")
+        try Data("#!/bin/sh\necho 'not-json'\necho 'parser detail' >&2\n".utf8).write(to: script)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
+        let configuration = ClaudeCodeProcessConfiguration(
+            prompt: "匹配禅道", workingDirectory: root, executableURL: script,
+            mcpConfigURL: nil, maxTurns: 1, model: nil, permissionMode: nil,
+            timeout: .seconds(2)
+        )
+
+        do {
+            _ = try await ClaudeCodeClient.defaultResponse(configuration)
+            Issue.record("预期非法 JSON 错误")
+        } catch let error as ClaudeCodeClientError {
+            guard case .invalidJSONWithDiagnostics(let diagnostic) = error else {
+                Issue.record("收到非预期错误：\(error.localizedDescription)")
+                return
+            }
+            #expect(diagnostic.executablePath == script.path)
+            #expect(diagnostic.stderr.contains("parser detail"))
+        }
+    }
 }
 
 private actor Capture {
