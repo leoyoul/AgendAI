@@ -14,16 +14,36 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <description sparkle:format="markdown"><![CDATA[# AgendAI 会小纪 v0.1.8
 
-## 本版本
+这是自 v0.1.6 之后各开发版本能力的汇总发布，包含 v0.1.7-dev.1、v0.1.7-dev.2、v0.1.7-dev.3 以及本次 v0.1.8 的工作台、任务和发布稳定性改动。
 
-- 重新整理工作台顶部工具栏，统一控件高度、间距和窗口标题栏边界。
-- 任务状态支持在“待确认、待开始、进行中、已完成、已取消”之间直接切换，不再强制线性流转。
-- 保留负责人、截止日期、标题等基础数据校验；切换为“待确认”的任务仍回到待办任务池。
+## 会后待办与禅道
+
+- 新增“会后待办”标签页，集中展示会议纪要中的待办和未决事项，并展示项目、执行、负责人、计划日期和匹配状态。
+- 支持单条交接、一键交接和重新生成；待办匹配由 Claude Code 调用禅道 MCP 完成，增加会话级 MCP 配置和独立的 Claude Code 模型、认证设置。
+- 支持复用 Claude Code 用户级 `zentao` 配置；未提供 `ZENTAO_MCP_TOKEN` 时不会覆盖已有认证信息，Token 不保存到项目文件、数据库或日志。
+- 会后待办迁移到 SQLite，兼容读取旧版 `follow-ups.json` 并保留备份；匹配失败时保留已有待办并支持重试。
+- 增加 MCP 连接失败、未认证、未安装、MCP 不可达、非法 JSON、请求超时和进程退出等诊断信息，支持硬超时、终止子进程及脱敏错误输出。
+- 将默认匹配超时调整为 600 秒；诊断详情包含配置来源、CLI 路径、执行阶段、退出码、MCP 名称和超时类型。
+
+## 会议、人员与工作台
+
+- 完善个人工作台周视图，统一展示会议和工作项，支持按人员或混合视图查看，并支持季度切换、筛选和纵轴切换。
+- 统一管理会议行动项、AI 分析任务、Agent 待办和手动任务，支持负责人、计划起止日期、优先级、标签、完成备注、编辑和删除。
+- 支持在待办任务池中确认任务，再将具备完整排期信息的任务放入工作台日历；负责人或截止日期未完成确认的任务继续留在待办任务池。
+- 任务状态支持在“待确认、待开始、进行中、已完成、已取消”之间直接切换，不再强制线性流转；进入或离开“已完成”时仍正确记录或清除完成时间。
+- 重新整理工作台顶部工具栏，规整为双行布局，统一控件可见高度、间距、图例位置和窗口标题栏边界；保留季度、筛选、纵轴、今天和新建任务等操作。
+- 完善会议详情、会议列表、状态标记、人员管理、声纹样本、常用词、笔记和导出入口，保留原始转写、会议纪要与 AI 分析的独立数据链路。
+
+## 稳定性与发布
+
+- 保留负责人、标题、计划日期和截止日期等基础数据校验，不改变日历排期规则。
 - 修复开发构建复制 Sparkle 框架时携带 macOS 元数据导致临时签名失败的问题。
+- 完成 Sparkle 更新 feed、通用 arm64 + x86_64 macOS DMG 和安装脚本的 v0.1.8 发布配置。
 
 ## 验证
 
 - Swift 测试全部通过。
+- macOS 打包测试全部通过。
 - 已生成并校验 arm64 + x86_64 universal macOS DMG。
 - 当前发布包使用本地 ad-hoc 签名，未使用 Apple Developer ID 或公证。
 
@@ -99,6 +119,6 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: vXLpQzUHFrcwb5j94UZZ7hgNxEpZeZRAdShgwtQcYFvXDjT2nfOEGpHJAorWxlE30lYBSVVaKJnf9WvvAx4oAg==
-length: 6156
+edSignature: j/X4BGjOM6tTqCWxJwIOKeyJ3F5BhjuJCBNo6RDqVYEGu3gbiImMbuwKDqwi9xLD4VWC03Tm/1+4oOtjRruKCg==
+length: 8412
 -->
