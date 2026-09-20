@@ -33,7 +33,11 @@ func databaseCreatesHotPathIndexesAfterMigrate() throws {
         "idx_meeting_todos_job",
         "idx_agent_chat_meeting_created",
         "idx_meeting_notes_meeting_created",
-        "idx_meeting_note_images_note_created"
+        "idx_meeting_note_images_note_created",
+        "idx_work_items_dates",
+        "idx_work_items_status_owner",
+        "idx_work_items_source_meeting",
+        "idx_work_item_origins_work_item"
     ]
     for name in expected {
         #expect(names.contains(name), "missing expected index: \(name)")
@@ -55,5 +59,5 @@ func databaseMigrateIsIdempotentForIndexes() throws {
     }
 
     let rows = try db.query("SELECT COUNT(*) AS c FROM sqlite_master WHERE type = 'index' AND name LIKE 'idx_%';")
-    #expect(rows.first?["c"]?.intValue == 18)
+    #expect(rows.first?["c"]?.intValue == 22)
 }

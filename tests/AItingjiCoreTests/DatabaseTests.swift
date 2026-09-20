@@ -23,6 +23,9 @@ func databaseCreatesRequiredTables() throws {
     #expect(tableNames.contains("manual_overrides"))
     #expect(tableNames.contains("export_jobs"))
     #expect(tableNames.contains("app_settings"))
+
+    let peopleColumns = try database.query("PRAGMA table_info(people)")
+    #expect(peopleColumns.contains { $0["name"]?.stringValue == "is_calendar_visible" })
 }
 
 @Test
@@ -121,7 +124,8 @@ func repositoriesWriteAndReadCoreRecords() throws {
             roleTags: ["项目", "交付"],
             responsibilities: "统筹项目计划、协调交付并跟踪风险",
             zentaoAccount: "zhangsan",
-            zentaoUserID: "18"
+            zentaoUserID: "18",
+            isCalendarVisible: true
         )
     )
 
@@ -158,6 +162,7 @@ func repositoriesWriteAndReadCoreRecords() throws {
     #expect(people.first?.responsibilities == "统筹项目计划、协调交付并跟踪风险")
     #expect(people.first?.zentaoAccount == "zhangsan")
     #expect(people.first?.zentaoUserID == "18")
+    #expect(people.first?.isCalendarVisible == true)
     #expect(terminology.first?.canonicalName == "示例科技")
     #expect(terminology.first?.aliases == ["示例", "ExampleTech"])
     #expect(models.first?.name == "Mock ASR")
@@ -165,7 +170,7 @@ func repositoriesWriteAndReadCoreRecords() throws {
 }
 
 @Test
-func peopleRepositoryListsNewestFirstAndEditingDoesNotReorder() throws {
+func peopleRepositoryListsOldestFirstAndEditingDoesNotReorder() throws {
     let path = temporaryDatabasePath("people-created-order")
     let database = try Database(path: path)
     try database.migrate()
@@ -179,13 +184,14 @@ func peopleRepositoryListsNewestFirstAndEditingDoesNotReorder() throws {
 
     try repository.create(older)
     try repository.create(newer)
-    #expect(try repository.list().map(\.id) == [newer.id, older.id])
+    // 两条记录通常落在同一秒内，此时按 rowid 兜底保持插入顺序。
+    #expect(try repository.list().map(\.id) == [older.id, newer.id])
 
     var renamedOlder = older
     renamedOlder.displayName = "编辑后的较早人员"
     renamedOlder.responsibilities = "负责维护项目计划"
     try repository.upsert(renamedOlder)
-    #expect(try repository.list().map(\.id) == [newer.id, older.id])
+    #expect(try repository.list().map(\.id) == [older.id, newer.id])
     #expect(try repository.list().first(where: { $0.id == older.id })?.responsibilities == "负责维护项目计划")
 
     let creationRows = try database.query(
@@ -217,6 +223,7 @@ func legacyPeopleGainEmptyResponsibilitiesDuringMigration() throws {
     let person = try #require(try PeopleRepository(database: database).list().first)
     #expect(person.id == "legacy-person")
     #expect(person.responsibilities.isEmpty)
+    #expect(person.isCalendarVisible == false)
 }
 
 @Test

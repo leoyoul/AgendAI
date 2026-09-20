@@ -78,6 +78,8 @@ struct MeetingMinutesVocabulary: Equatable, Sendable {
         请先按以下本地词库理解转写，并在所有输出字段中只使用标准名称。岗位、角色和禅道账号仅用于识别人员，不要写入纪要正文，除非会议原文明确讨论这些信息。
 
         \(lines.joined(separator: "\n"))
+
+        \(PersonNameResolver.honorificGuidance)
         """
     }
 

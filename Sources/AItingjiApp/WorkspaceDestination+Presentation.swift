@@ -4,7 +4,8 @@ extension WorkspaceDestination: Identifiable {
     public var id: Self { self }
 
     static let sidebarDestinations: [WorkspaceDestination] = [
-        .calendar
+        .calendar,
+        .workItemPool
     ]
 
     static let settingsDestinations: [WorkspaceDestination] = [
@@ -20,7 +21,8 @@ extension WorkspaceDestination: Identifiable {
 
     var title: String {
         switch self {
-        case .calendar: "日历"
+        case .calendar: "工作台"
+        case .workItemPool: "待办任务池"
         case .agentSettings: "Agent 设置"
         case .models: "模型"
         case .knowledgeBase: "知识库"
@@ -37,6 +39,7 @@ extension WorkspaceDestination: Identifiable {
     var systemImage: String {
         switch self {
         case .calendar: "calendar"
+        case .workItemPool: "checklist"
         case .agentSettings: "cpu"
         case .models: "server.rack"
         case .knowledgeBase: "books.vertical"

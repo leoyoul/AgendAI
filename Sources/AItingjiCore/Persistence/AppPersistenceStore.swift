@@ -12,6 +12,7 @@ public struct AppPersistenceSnapshot: Sendable {
     public var diarizationRunsByMeeting: [Meeting.ID: [DiarizationRun]]
     public var diarizationMappingsByMeeting: [Meeting.ID: [DiarizationSpeakerMapping]]
     public var meetingAgentMessagesByMeeting: [Meeting.ID: [MeetingAgentChatMessage]]
+    public var workItems: [WorkItem]
     public var modelSources: [ModelSource]
     public var appSettings: [String: String]
 
@@ -26,6 +27,7 @@ public struct AppPersistenceSnapshot: Sendable {
         diarizationRunsByMeeting: [Meeting.ID: [DiarizationRun]] = [:],
         diarizationMappingsByMeeting: [Meeting.ID: [DiarizationSpeakerMapping]] = [:],
         meetingAgentMessagesByMeeting: [Meeting.ID: [MeetingAgentChatMessage]] = [:],
+        workItems: [WorkItem] = [],
         modelSources: [ModelSource],
         appSettings: [String: String] = [:]
     ) {
@@ -39,6 +41,7 @@ public struct AppPersistenceSnapshot: Sendable {
         self.diarizationRunsByMeeting = diarizationRunsByMeeting
         self.diarizationMappingsByMeeting = diarizationMappingsByMeeting
         self.meetingAgentMessagesByMeeting = meetingAgentMessagesByMeeting
+        self.workItems = workItems
         self.modelSources = modelSources
         self.appSettings = appSettings
     }
@@ -105,6 +108,7 @@ public final class AppPersistenceStore: @unchecked Sendable {
     private let meetingTodos: MeetingTodoRepository
     private let meetingFollowUps: MeetingFollowUpRepository
     private let meetingAgentChat: MeetingAgentChatRepository
+    private let workItems: WorkItemRepository
     private let availabilityLock = NSLock()
     private var currentAvailability: AppPersistenceAvailability = .available
 
@@ -175,6 +179,7 @@ public final class AppPersistenceStore: @unchecked Sendable {
             meetingTodos = MeetingTodoRepository(database: database)
             meetingFollowUps = MeetingFollowUpRepository(database: database)
             meetingAgentChat = MeetingAgentChatRepository(database: database)
+            workItems = WorkItemRepository(database: database)
             try upgradeBackup.recordCurrentVersion()
         } catch {
             throw Self.initializationError(from: error)
@@ -349,6 +354,7 @@ public final class AppPersistenceStore: @unchecked Sendable {
             diarizationRunsByMeeting: diarizationRunsByMeeting,
             diarizationMappingsByMeeting: diarizationMappingsByMeeting,
             meetingAgentMessagesByMeeting: try meetingAgentChat.listAllGroupedByMeeting(),
+            workItems: try workItems.list(),
             modelSources: try models.list(),
             appSettings: [
                 AppSettingKey.postprocessPrompt: try settings.get(AppSettingKey.postprocessPrompt)
@@ -666,6 +672,52 @@ public final class AppPersistenceStore: @unchecked Sendable {
         return try meetingAgentChat.list(meetingID: meetingID)
     }
 
+    public func loadWorkItems() throws -> [WorkItem] {
+        try requireAvailable()
+        return try workItems.list()
+    }
+
+    public func loadWorkItem(id: WorkItem.ID) throws -> WorkItem? {
+        try requireAvailable()
+        return try workItems.get(id: id)
+    }
+
+    public func loadWorkItemOrigins(workItemID: WorkItem.ID) throws -> [WorkItemOrigin] {
+        try requireAvailable()
+        return try workItems.loadWorkItemOrigins(workItemID: workItemID)
+    }
+
+    public func createWorkItem(_ item: WorkItem) throws {
+        try requireAvailable()
+        try workItems.create(item)
+    }
+
+    public func updateWorkItem(_ item: WorkItem) throws {
+        try requireAvailable()
+        try workItems.update(item)
+    }
+
+    public func deleteWorkItem(id: WorkItem.ID) throws {
+        try requireAvailable()
+        try workItems.delete(id: id)
+    }
+
+    public func deleteWorkItems(ids: [WorkItem.ID]) throws {
+        try requireAvailable()
+        try workItems.delete(ids: ids)
+    }
+
+    public func detachWorkItemsFromMeeting(meetingID: Meeting.ID) throws {
+        try requireAvailable()
+        try workItems.detachMeetingSource(meetingID: meetingID)
+    }
+
+    @discardableResult
+    public func mergeGeneratedWorkItems(_ candidates: [WorkItemImportCandidate]) throws -> [WorkItem] {
+        try requireAvailable()
+        return try workItems.mergeGeneratedWorkItems(candidates)
+    }
+
     @discardableResult
     public func importMeetingAgentResult(
         jobID: MeetingAgentJob.ID,
@@ -825,6 +877,7 @@ public enum AppSettingKey {
     public static let meetingMinutesModelSeeded = "meeting_minutes_model_seeded"
     public static let difyKnowledgeBaseConfiguration = "dify_knowledge_base_configuration"
     public static let currentUserPersonID = "current_user_person_id"
+    public static let workbenchLaneMode = "workbench_lane_mode"
     public static let meetingAgentWorkspacePath = "meeting_agent_workspace_path"
     public static let zentaoConfiguration = "zentao_configuration"
 }

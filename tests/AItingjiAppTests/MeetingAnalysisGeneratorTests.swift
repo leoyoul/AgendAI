@@ -284,6 +284,62 @@ struct MeetingAnalysisGeneratorTests {
         #expect(reloaded.selectedMeetingAnalysisArtifact?.document.todos.first?.owner == "黄茂辉")
     }
 
+    @Test("analysis owners land in the task pool with resolved people and stranger hints")
+    func analysisOwnersReachTaskPoolWithResolvedPeople() async throws {
+        let directory = try temporaryDirectory("analysis-owner-pool")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try AppPersistenceStore(
+            path: directory.appendingPathComponent("test.sqlite").path,
+            apiKeyStore: AnalysisTestAPIKeyStore()
+        )
+        let meeting = sampleMeeting(id: "analysis-owner-pool")
+        try store.upsertMeeting(meeting)
+        for segment in sampleSegments(meetingID: meeting.id) {
+            try store.upsertSegment(segment)
+        }
+        try store.upsertPerson(VoiceprintPerson(
+            id: "person-zhang",
+            displayName: "张敏",
+            aliases: ["敏姐"]
+        ))
+        try store.upsertModelSource(agentSource(baseURL: "https://agent.example.test/v1"))
+
+        let minutesGenerator = MeetingMinutesGenerator(
+            storageDirectory: directory.appendingPathComponent("minutes", isDirectory: true)
+        )
+        _ = try await minutesGenerator.generate(
+            meeting: meeting,
+            segments: sampleSegments(meetingID: meeting.id),
+            source: agentSource(baseURL: "mock://agent")
+        )
+        let analysisGenerator = MeetingAnalysisGenerator(
+            storageDirectory: directory.appendingPathComponent("analysis", isDirectory: true),
+            agentResponseGenerator: { _, _, _ in
+                #"{"title":"项目交付 AI 分析会议纪要","executive_summary":"交付安排已分层。","findings":[],"todos":[{"id":"todo-1","item":"整理交付计划","owner":"敏姐老师","task":"梳理实施步骤","deliverable":"交付计划表","deadline":"待确认","assignment_basis":"职责匹配建议，待确认","evidence":"会议转写 00:00"},{"id":"todo-2","item":"补齐供应商清单","owner":"王小明","task":"整理供应商名单","deliverable":"供应商清单","deadline":"待确认","assignment_basis":"会议原文提到的外部人员，待确认","evidence":"会议转写 00:05"}],"risks":[],"sources":[]}"#
+            }
+        )
+        let appState = AppState(
+            storeFactory: { store },
+            pendingTranscriptionRootURL: directory.appendingPathComponent("PendingASR"),
+            resumePendingTranscriptions: false,
+            meetingMinutesGenerator: minutesGenerator,
+            meetingAnalysisGenerator: analysisGenerator
+        )
+        #expect(appState.selectMeeting(meeting.id))
+        appState.generateSelectedMeetingAnalysis()
+        for _ in 0..<200 where appState.generatingMeetingAnalysisIDs.contains(meeting.id) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        let matched = try #require(appState.workItems.first(where: { $0.title == "整理交付计划" }))
+        #expect(matched.ownerPersonIDs == ["person-zhang"])
+        #expect(matched.ownerNameHints.isEmpty)
+
+        let stranger = try #require(appState.workItems.first(where: { $0.title == "补齐供应商清单" }))
+        #expect(stranger.ownerPersonIDs.isEmpty)
+        #expect(stranger.ownerNameHints == ["王小明"])
+    }
+
     @Test("running analysis protects the meeting and can be cancelled")
     func cancellationAndDeletionProtection() async throws {
         let directory = try temporaryDirectory("analysis-cancellation")
@@ -336,6 +392,38 @@ struct MeetingAnalysisGeneratorTests {
         }
         #expect(!appState.generatingMeetingAnalysisIDs.contains(meeting.id))
         #expect(!appState.isMeetingProtectedFromMutation(meeting.id))
+    }
+
+    @Test("alias owners resolve to canonical names while unknown names are kept")
+    func resolvesAliasOwnersAndKeepsUnknownNames() async throws {
+        let directory = try temporaryDirectory("analysis-owner-resolution")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let generator = MeetingAnalysisGenerator(
+            storageDirectory: directory.appendingPathComponent("analysis", isDirectory: true),
+            now: { Date(timeIntervalSince1970: 1_800_000_000) },
+            agentResponseGenerator: { _, _, _ in
+                #"{"title":"项目交付 AI 分析会议纪要","executive_summary":"交付安排已分层。","findings":[],"todos":[{"id":"todo-1","item":"整理交付计划","owner":"敏姐","task":"梳理实施步骤","deliverable":"交付计划表","deadline":"待确认","assignment_basis":"职责匹配建议，待确认","evidence":"会议转写 00:00"},{"id":"todo-2","item":"补齐供应商清单","owner":"王小明","task":"整理供应商名单","deliverable":"供应商清单","deadline":"待确认","assignment_basis":"会议原文提到的外部人员，待确认","evidence":"会议转写 00:05"}],"risks":[],"sources":[]}"#
+            }
+        )
+
+        let artifact = try await generator.generate(
+            meeting: sampleMeeting(id: "analysis-owner-resolution"),
+            segments: sampleSegments(meetingID: "analysis-owner-resolution"),
+            originalMinutes: nil,
+            people: [
+                VoiceprintPerson(id: "person-zhang", displayName: "张敏", aliases: ["敏姐"])
+            ],
+            terminology: [],
+            knowledgeContext: "",
+            source: agentSource(baseURL: "https://agent.example.test/v1"),
+            runtime: PiAgentRuntimeConfiguration(
+                workingDirectoryURL: directory,
+                sessionDirectoryURL: directory.appendingPathComponent("session", isDirectory: true)
+            )
+        )
+
+        #expect(artifact.document.todos.first?.owner == "张敏")
+        #expect(artifact.document.todos.last?.owner == "王小明")
     }
 
     private func makeOriginalMinutes(meeting: Meeting, directory: URL) async throws -> MeetingMinutesArtifact {

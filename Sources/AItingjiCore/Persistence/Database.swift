@@ -85,6 +85,7 @@ public final class Database: @unchecked Sendable {
         try addColumnIfMissing(table: "people", column: "responsibilities", definition: "TEXT NOT NULL DEFAULT ''")
         try addColumnIfMissing(table: "people", column: "zentao_account", definition: "TEXT NOT NULL DEFAULT ''")
         try addColumnIfMissing(table: "people", column: "zentao_user_id", definition: "TEXT NOT NULL DEFAULT ''")
+        try addColumnIfMissing(table: "people", column: "is_calendar_visible", definition: "INTEGER NOT NULL DEFAULT 0")
         try addColumnIfMissing(table: "meetings", column: "is_archived", definition: "INTEGER NOT NULL DEFAULT 0")
         try addColumnIfMissing(table: "meetings", column: "audio_file_path", definition: "TEXT")
         try addColumnIfMissing(table: "meetings", column: "microphone_audio_file_path", definition: "TEXT")
@@ -208,7 +209,11 @@ public final class Database: @unchecked Sendable {
             "CREATE INDEX IF NOT EXISTS idx_meeting_follow_ups_task ON meeting_follow_ups(task_id);",
             "CREATE INDEX IF NOT EXISTS idx_agent_chat_meeting_created ON meeting_agent_chat_messages(meeting_id, created_at);",
             "CREATE INDEX IF NOT EXISTS idx_meeting_notes_meeting_created ON meeting_notes(meeting_id, created_at);",
-            "CREATE INDEX IF NOT EXISTS idx_meeting_note_images_note_created ON meeting_note_images(note_id, created_at);"
+            "CREATE INDEX IF NOT EXISTS idx_meeting_note_images_note_created ON meeting_note_images(note_id, created_at);",
+            "CREATE INDEX IF NOT EXISTS idx_work_items_dates ON work_items(planned_start_date, planned_end_date);",
+            "CREATE INDEX IF NOT EXISTS idx_work_items_status_owner ON work_items(status, owner_person_ids);",
+            "CREATE INDEX IF NOT EXISTS idx_work_items_source_meeting ON work_items(source_meeting_id);",
+            "CREATE INDEX IF NOT EXISTS idx_work_item_origins_work_item ON work_item_origins(work_item_id);"
         ]
         for sql in statements {
             try execute(sql)
@@ -380,6 +385,7 @@ public final class Database: @unchecked Sendable {
         notes TEXT,
         threshold REAL NOT NULL DEFAULT 0.95,
         is_active INTEGER NOT NULL DEFAULT 1,
+        is_calendar_visible INTEGER NOT NULL DEFAULT 0,
         created_at TEXT,
         updated_at TEXT
     );
@@ -552,6 +558,46 @@ public final class Database: @unchecked Sendable {
         created_at REAL NOT NULL,
         updated_at REAL NOT NULL,
         FOREIGN KEY(meeting_id) REFERENCES meetings(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS work_items (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        detail TEXT NOT NULL DEFAULT '',
+        deliverable TEXT NOT NULL DEFAULT '',
+        acceptance_criteria TEXT NOT NULL DEFAULT '',
+        owner_person_ids TEXT NOT NULL DEFAULT '[]',
+        owner_name_hints TEXT NOT NULL DEFAULT '[]',
+        source_deadline_text TEXT,
+        planned_start_date TEXT,
+        planned_end_date TEXT,
+        status TEXT NOT NULL DEFAULT 'not_started',
+        priority TEXT NOT NULL DEFAULT 'normal',
+        tags_json TEXT NOT NULL DEFAULT '[]',
+        completion_note TEXT NOT NULL DEFAULT '',
+        completed_at REAL,
+        source_meeting_id TEXT,
+        source_meeting_title TEXT,
+        source TEXT NOT NULL DEFAULT 'manual',
+        created_at REAL NOT NULL,
+        updated_at REAL NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS work_item_origins (
+        id TEXT PRIMARY KEY,
+        work_item_id TEXT NOT NULL,
+        source TEXT NOT NULL,
+        source_key TEXT NOT NULL UNIQUE,
+        meeting_id TEXT,
+        meeting_title TEXT,
+        job_id TEXT,
+        todo_id TEXT,
+        raw_title TEXT NOT NULL DEFAULT '',
+        raw_owner_names TEXT NOT NULL DEFAULT '[]',
+        raw_deadline TEXT,
+        evidence_json TEXT NOT NULL DEFAULT '[]',
+        created_at REAL NOT NULL,
+        FOREIGN KEY(work_item_id) REFERENCES work_items(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS voiceprint_samples (

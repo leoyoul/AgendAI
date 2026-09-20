@@ -6,7 +6,7 @@ import Testing
 struct SettingsNavigationPresentationTests {
     @Test("main sidebar keeps only calendar and settings categories are separate")
     func sidebarDestinations() {
-        #expect(WorkspaceDestination.sidebarDestinations == [.calendar])
+        #expect(WorkspaceDestination.sidebarDestinations == [.calendar, .workItemPool])
         #expect(WorkspaceDestination.settingsDestinations == [
             .agentSettings, .models, .knowledgeBase, .vocabulary,
             .people, .externalSystems, .archive, .debugLog

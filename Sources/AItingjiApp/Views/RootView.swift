@@ -1,4 +1,5 @@
 import AItingjiCore
+import AppKit
 import SwiftUI
 
 struct RootView: View {
@@ -6,9 +7,12 @@ struct RootView: View {
     @Bindable var updateCoordinator: AppUpdateCoordinator
     @State private var navigation = MeetingWorkspaceNavigation(displayedWeekDate: Date())
     @State private var settingsSelection: WorkspaceDestination = .agentSettings
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var didRestoreSidebar = false
+    @State private var didApplyLaunchDefaults = false
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             if navigation.destination == .settings {
                 SettingsSidebarView(selection: $settingsSelection, onReturn: returnFromSettings)
                     .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 300)
@@ -21,7 +25,7 @@ struct RootView: View {
                     onCreateMeeting: createMeeting,
                     onArchiveMeeting: archiveMeeting
                 )
-                .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 340)
+                .navigationSplitViewColumnWidth(min: 232, ideal: 252, max: 280)
             }
         } detail: {
             if navigation.destination == .settings {
@@ -33,9 +37,17 @@ struct RootView: View {
                 )
             }
         }
+        .navigationSplitViewStyle(.balanced)
+        .modifier(TransparentWindowToolbarModifier())
         .onChange(of: navigation.detailMeetingID, initial: true) { _, meetingID in
             guard let meetingID else { return }
             _ = appState.selectMeeting(meetingID)
+        }
+        .onAppear {
+            applyLaunchDefaultsIfNeeded()
+            guard !didRestoreSidebar else { return }
+            columnVisibility = .all
+            didRestoreSidebar = true
         }
         .task {
             updateCoordinator.start(log: appState.recordUpdateLog)
@@ -48,6 +60,12 @@ struct RootView: View {
         } message: {
             Text("将会小纪拖到“应用程序”并选择“替换”后，即可接收应用内更新。会议和账户数据不会被替换。")
         }
+    }
+
+    private func applyLaunchDefaultsIfNeeded() {
+        guard !didApplyLaunchDefaults else { return }
+        navigation.resetToLaunchDefaults(today: Date())
+        didApplyLaunchDefaults = true
     }
 
     @ViewBuilder
@@ -74,6 +92,8 @@ struct RootView: View {
         case .externalSystems:
             ExternalSystemsSettingsView()
         case .calendar, .meeting, .settings:
+            EmptyView()
+        case .workItemPool:
             EmptyView()
         }
     }
@@ -132,5 +152,43 @@ struct RootView: View {
 
     private func restoreMeeting(_ meetingID: Meeting.ID) {
         _ = appState.restoreMeeting(meetingID)
+    }
+}
+
+private struct TransparentWindowToolbarModifier: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(macOS 15.0, *) {
+            content
+                .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        } else {
+            content
+                .background(WindowToolbarConfigurator())
+        }
+    }
+}
+
+private struct WindowToolbarConfigurator: NSViewRepresentable {
+    func makeNSView(context: Context) -> ToolbarWindowProbe {
+        ToolbarWindowProbe()
+    }
+
+    func updateNSView(_ nsView: ToolbarWindowProbe, context: Context) {
+        nsView.configureWindowIfAvailable()
+    }
+}
+
+private final class ToolbarWindowProbe: NSView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        configureWindowIfAvailable()
+    }
+
+    func configureWindowIfAvailable() {
+        guard let window else { return }
+        window.styleMask.insert(.fullSizeContentView)
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .visible
+        window.toolbar?.showsBaselineSeparator = false
     }
 }

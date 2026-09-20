@@ -3,11 +3,11 @@ set -eu
 
 APP_NAME="AgendAI 会小纪"
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-DMG_PATH="$ROOT_DIR/dist/AgendAI-v0.1.4-macOS-universal.dmg"
+DMG_PATH="$ROOT_DIR/dist/AgendAI-v0.1.8-macOS-universal.dmg"
 TARGET_APP="/Applications/$APP_NAME.app"
 TMP_DIR="$(mktemp -d "/tmp/agendai-install.XXXXXX")"
 MOUNT_ROOT="$TMP_DIR/mount"
-MOUNT_POINT="$MOUNT_ROOT/AgendAI 会小纪 0.1.4"
+MOUNT_POINT="$MOUNT_ROOT/AgendAI 会小纪 0.1.8"
 MOUNTED_APP="$MOUNT_POINT/$APP_NAME.app"
 DEVICE=""
 

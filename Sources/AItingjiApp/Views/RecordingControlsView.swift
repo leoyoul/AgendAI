@@ -108,6 +108,7 @@ struct RecordingControlsView: View {
                         Label(control.primaryActionTitle, systemImage: control.primaryActionSystemImage)
                     }
                     .buttonStyle(.borderedProminent)
+                    .controlSize(.regular)
                     .disabled(
                         !control.canStartOrResume
                             || isAnotherMeetingRecording
@@ -121,6 +122,7 @@ struct RecordingControlsView: View {
                     } label: {
                         Label("暂停", systemImage: "pause.circle")
                     }
+                    .buttonStyle(.bordered)
                     .disabled(
                         !isCurrentRecording
                             || !control.canPause
@@ -134,6 +136,8 @@ struct RecordingControlsView: View {
                     } label: {
                         Label("停止", systemImage: "stop.circle")
                     }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
                     .disabled(
                         !isCurrentRecording
                             || !control.canStop
@@ -142,11 +146,17 @@ struct RecordingControlsView: View {
                             || appState.isCaptureTransitioning
                     )
 
-                    Button {
-                        appState.transcribeMockAudioWithDefaultASR()
+                    Menu {
+                        Button {
+                            appState.transcribeMockAudioWithDefaultASR()
+                        } label: {
+                            Label("模拟转写一次", systemImage: "text.badge.plus")
+                        }
                     } label: {
-                        Label("模拟转写一次", systemImage: "text.badge.plus")
+                        Label("调试", systemImage: "ellipsis.circle")
                     }
+                    .buttonStyle(.bordered)
+                    .help("调试录音后的转写流程")
                     .disabled(
                         isContentLocked
                             || appState.hasActiveRecording

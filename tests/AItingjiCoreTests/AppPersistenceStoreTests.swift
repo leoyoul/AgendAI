@@ -73,7 +73,8 @@ import Testing
             roleTags: ["研发"],
             responsibilities: "负责研发计划、技术方案与交付质量",
             zentaoAccount: "zhaoliu",
-            zentaoUserID: "26"
+            zentaoUserID: "26",
+            isCalendarVisible: true
         ))
         try store.upsertTerminologyEntry(TerminologyEntry(
             id: "store-term",
@@ -124,6 +125,7 @@ import Testing
         #expect(snapshot.people.first?.jobTitle == "研发负责人")
         #expect(snapshot.people.first?.responsibilities == "负责研发计划、技术方案与交付质量")
         #expect(snapshot.people.first?.zentaoAccount == "zhaoliu")
+        #expect(snapshot.people.first?.isCalendarVisible == true)
         #expect(snapshot.terminologyEntries.map(\.canonicalName) == ["示例科技"])
         #expect(snapshot.diarizationRunsByMeeting["store-meeting"]?.map(\.id) == ["store-run"])
         #expect(snapshot.diarizationMappingsByMeeting["store-meeting"]?.first?.personName == "赵六")

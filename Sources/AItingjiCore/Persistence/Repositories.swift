@@ -881,9 +881,9 @@ public struct PeopleRepository: Sendable {
             """
             INSERT INTO people (
                 id, display_name, aliases, job_title, role_tags, responsibilities,
-                zentao_account, zentao_user_id, threshold, is_active, created_at
+                zentao_account, zentao_user_id, threshold, is_active, is_calendar_visible, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'))
             """,
             bindings: [
                 .text(person.id),
@@ -895,7 +895,8 @@ public struct PeopleRepository: Sendable {
                 .text(person.zentaoAccount),
                 .text(person.zentaoUserID),
                 .real(person.threshold),
-                .integer(person.isActive ? 1 : 0)
+                .integer(person.isActive ? 1 : 0),
+                .integer(person.isCalendarVisible ? 1 : 0)
             ]
         )
     }
@@ -905,9 +906,9 @@ public struct PeopleRepository: Sendable {
             """
             INSERT INTO people (
                 id, display_name, aliases, job_title, role_tags, responsibilities,
-                zentao_account, zentao_user_id, threshold, is_active, created_at
+                zentao_account, zentao_user_id, threshold, is_active, is_calendar_visible, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'))
             ON CONFLICT(id) DO UPDATE SET
                 display_name = excluded.display_name,
                 aliases = excluded.aliases,
@@ -918,6 +919,7 @@ public struct PeopleRepository: Sendable {
                 zentao_user_id = excluded.zentao_user_id,
                 threshold = excluded.threshold,
                 is_active = excluded.is_active,
+                is_calendar_visible = excluded.is_calendar_visible,
                 updated_at = strftime('%s', 'now')
             """,
             bindings: [
@@ -930,19 +932,22 @@ public struct PeopleRepository: Sendable {
                 .text(person.zentaoAccount),
                 .text(person.zentaoUserID),
                 .real(person.threshold),
-                .integer(person.isActive ? 1 : 0)
+                .integer(person.isActive ? 1 : 0),
+                .integer(person.isCalendarVisible ? 1 : 0)
             ]
         )
     }
 
+    /// 人员按创建日期正序返回：最早创建的排在最前，负责人下拉与工作台人员行的顺序都由这里决定。
+    /// 没有 created_at 的历史记录按插入顺序排在最前；同一秒创建时用 rowid 兜底。
     public func list() throws -> [VoiceprintPerson] {
         let rows = try database.query(
             """
             SELECT * FROM people
             ORDER BY
-                CASE WHEN created_at IS NULL THEN 0 ELSE 1 END DESC,
-                CAST(created_at AS REAL) DESC,
-                rowid DESC
+                CASE WHEN created_at IS NULL THEN 0 ELSE 1 END ASC,
+                CAST(created_at AS REAL) ASC,
+                rowid ASC
             """
         )
         return try rows.map(decodePerson)
@@ -969,7 +974,8 @@ public struct PeopleRepository: Sendable {
             zentaoAccount: row["zentao_account"]?.stringValue ?? "",
             zentaoUserID: row["zentao_user_id"]?.stringValue ?? "",
             threshold: row["threshold"]?.doubleValue ?? VoiceprintMatchingPolicy.minimumPersonThreshold,
-            isActive: row["is_active"]?.intValue == 1
+            isActive: row["is_active"]?.intValue == 1,
+            isCalendarVisible: row["is_calendar_visible"]?.intValue == 1
         )
     }
 

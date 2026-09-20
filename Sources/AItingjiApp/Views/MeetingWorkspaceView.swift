@@ -22,12 +22,24 @@ struct MeetingWorkspaceView: View {
                         }
                     }
             } else {
-                WeekCalendarView(
-                    meetings: appState.meetings,
-                    activeMeetingID: appState.calendarActiveMeetingID,
-                    displayedWeekDate: $navigation.displayedWeekDate,
-                    onSelectMeeting: onSelectMeeting
-                )
+                switch navigation.destination {
+                case .workItemPool:
+                    WorkItemPoolView(onSelectMeeting: onSelectMeeting)
+                case .calendar:
+                    WeekCalendarView(
+                        meetings: appState.meetings,
+                        activeMeetingID: appState.calendarActiveMeetingID,
+                        displayedWeekDate: $navigation.displayedWeekDate,
+                        onSelectMeeting: onSelectMeeting
+                    )
+                default:
+                    WeekCalendarView(
+                        meetings: appState.meetings,
+                        activeMeetingID: appState.calendarActiveMeetingID,
+                        displayedWeekDate: $navigation.displayedWeekDate,
+                        onSelectMeeting: onSelectMeeting
+                    )
+                }
             }
         }
     }
@@ -41,11 +53,11 @@ struct MeetingWorkspaceView: View {
     private var returnTitle: String {
         switch returnDestination {
         case .calendar:
-            "本周会议"
-        case .agentSettings, .models, .knowledgeBase, .vocabulary, .people, .archive, .debugLog, .externalSystems, .settings:
+            "返回工作台"
+        case .workItemPool, .agentSettings, .models, .knowledgeBase, .vocabulary, .people, .archive, .debugLog, .externalSystems, .settings:
             "返回\(returnDestination.title)"
         case .meeting:
-            "本周会议"
+            "返回工作台"
         }
     }
 }

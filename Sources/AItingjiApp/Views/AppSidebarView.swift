@@ -18,10 +18,10 @@ struct AppSidebarView: View {
             } label: {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("会小纪")
-                        .font(.title2.bold())
+                        .font(AppTypography.brand)
                         .foregroundStyle(updateCoordinator.brandState.hasUpdate ? .orange : .primary)
                     Text(updateCoordinator.brandState.versionLabel)
-                        .font(.caption.weight(.medium))
+                        .font(AppTypography.brandVersion)
                         .foregroundStyle(updateCoordinator.brandState.hasUpdate ? .orange : .secondary)
                         .frame(height: 16, alignment: .leading)
                 }
@@ -31,60 +31,24 @@ struct AppSidebarView: View {
             .disabled(updateCoordinator.isChecking || updateCoordinator.installationPromptRequired || !updateCoordinator.updatesAreEnabled)
             .help("检查更新")
             .padding(.horizontal, 16)
-            .padding(.top, 14)
-            .padding(.bottom, 10)
+            .padding(.top, 10)
+            .padding(.bottom, 8)
 
-            VStack(spacing: 2) {
-                Button {
-                    onCreateMeeting()
-                } label: {
-                    Label("新建会议", systemImage: "plus")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 10)
-                        .frame(height: 34)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .disabled(!appState.isPersistenceAvailable)
-
-                ForEach(WorkspaceDestination.sidebarDestinations) { destination in
-                    Button {
-                        onSelectDestination(destination)
-                    } label: {
-                        Label(destination.title, systemImage: destination.systemImage)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 10)
-                            .frame(height: 34)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .background(
-                        selectedDestination == destination
-                            ? Color.accentColor.opacity(0.16)
-                            : Color.clear,
-                        in: RoundedRectangle(cornerRadius: 6)
-                    )
-                }
-                Button {
-                    onSelectDestination(.settings)
-                } label: {
-                    Label("设置", systemImage: "gearshape")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 10)
-                        .frame(height: 34)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 8)
+            SidebarNavigationGroup(
+                selectedDestination: selectedDestination,
+                pendingWorkItemCount: appState.pendingConfirmationWorkItems.count,
+                isPersistenceAvailable: appState.isPersistenceAvailable,
+                onSelectDestination: onSelectDestination,
+                onCreateMeeting: onCreateMeeting
+            )
 
             Divider()
-                .padding(.top, 10)
+                .padding(.top, 8)
 
             Text("会议记录")
-                .font(.caption.weight(.semibold))
+                .font(AppTypography.section)
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, AppLayoutMetrics.Sidebar.horizontalPadding + 2)
                 .padding(.top, 12)
                 .padding(.bottom, 4)
 
@@ -94,7 +58,6 @@ struct AppSidebarView: View {
                 onArchiveMeeting: onArchiveMeeting
             )
         }
-        .background(.regularMaterial)
     }
 
 }

@@ -3,8 +3,8 @@ set -eu
 
 APP_NAME="AgendAI 会小纪"
 BUNDLE_ID="com.local.aitingji"
-APP_VERSION="${AGEND_AI_APP_VERSION:-0.1.4}"
-APP_BUILD="${AGEND_AI_APP_BUILD:-5}"
+APP_VERSION="${AGEND_AI_APP_VERSION:-0.1.8}"
+APP_BUILD="${AGEND_AI_APP_BUILD:-18}"
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
 DMG_PATH="$DIST_DIR/AgendAI-v${APP_VERSION}-macOS-universal.dmg"
@@ -29,8 +29,23 @@ if [ ! -f "$ICON_SOURCE" ]; then
     exit 1
 fi
 
+ARM_BIN_DIR="$(swift build -c release --arch arm64 --product AItingjiApp --show-bin-path)"
 swift build -c release --arch arm64 --product AItingjiApp
+ARM_BINARY_SOURCE="$ARM_BIN_DIR/AItingjiApp"
+if [ ! -x "$ARM_BINARY_SOURCE" ]; then
+    echo "找不到 arm64 构建产物：$ARM_BINARY_SOURCE" >&2
+    exit 1
+fi
+cp "$ARM_BINARY_SOURCE" "$TMP_DIR/AItingjiApp-arm64"
+
+X86_BIN_DIR="$(swift build -c release --arch x86_64 --product AItingjiApp --show-bin-path)"
 swift build -c release --arch x86_64 --product AItingjiApp
+X86_BINARY_SOURCE="$X86_BIN_DIR/AItingjiApp"
+if [ ! -x "$X86_BINARY_SOURCE" ]; then
+    echo "找不到 x86_64 构建产物：$X86_BINARY_SOURCE" >&2
+    exit 1
+fi
+cp "$X86_BINARY_SOURCE" "$TMP_DIR/AItingjiApp-x86_64"
 
 rm -rf "$DMG_PATH" "$ICONSET_DIR"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR" "$FRAMEWORKS_DIR" "$ICONSET_DIR"
@@ -43,8 +58,8 @@ done
 
 iconutil -c icns "$ICONSET_DIR" -o "$RESOURCES_DIR/AppIcon.icns"
 lipo -create \
-    "$ROOT_DIR/.build/arm64-apple-macosx/release/AItingjiApp" \
-    "$ROOT_DIR/.build/x86_64-apple-macosx/release/AItingjiApp" \
+    "$TMP_DIR/AItingjiApp-arm64" \
+    "$TMP_DIR/AItingjiApp-x86_64" \
     -output "$MACOS_DIR/$APP_NAME"
 cp "$ROOT_DIR/Packaging/AItingjiApp-Info.plist" "$CONTENTS_DIR/Info.plist"
 plutil -replace CFBundleShortVersionString -string "$APP_VERSION" "$CONTENTS_DIR/Info.plist"
@@ -61,7 +76,7 @@ if [ "${#SPARKLE_PUBLIC_KEY}" -lt 32 ]; then
     exit 1
 fi
 
-ARM_BINARY="$ROOT_DIR/.build/arm64-apple-macosx/release/AItingjiApp"
+ARM_BINARY="$TMP_DIR/AItingjiApp-arm64"
 if otool -L "$ARM_BINARY" | grep -q 'Sparkle.framework'; then
     SPARKLE_SOURCE="${SPARKLE_FRAMEWORK_PATH:-}"
     if [ -z "$SPARKLE_SOURCE" ]; then

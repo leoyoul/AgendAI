@@ -27,8 +27,11 @@ public enum ClaudeCodeClientError: Error, Equatable, LocalizedError, Sendable {
     case processFailedWithDiagnostics(ClaudeCodeDiagnostic)
     case invalidJSON
     case invalidJSONWithDiagnostics(ClaudeCodeDiagnostic)
+    case structuredOutputFailedWithDiagnostics(ClaudeCodeDiagnostic)
     case unauthenticated
     case unauthenticatedWithDiagnostics(ClaudeCodeDiagnostic)
+    case mcpPermissionDenied([String])
+    case mcpPermissionDeniedWithDiagnostics(ClaudeCodeDiagnostic)
     case mcpUnavailable(String)
     case mcpUnavailableWithDiagnostics(ClaudeCodeDiagnostic)
 
@@ -43,8 +46,11 @@ public enum ClaudeCodeClientError: Error, Equatable, LocalizedError, Sendable {
         case .processFailedWithDiagnostics(let diagnostic): "Claude Code 进程失败：\(diagnostic.summary)"
         case .invalidJSON: "Claude Code 未返回有效 JSON。"
         case .invalidJSONWithDiagnostics(let diagnostic): "Claude Code 输出解析失败：\(diagnostic.summary)"
+        case .structuredOutputFailedWithDiagnostics(let diagnostic): diagnostic.summary
         case .unauthenticated: "Claude Code 未认证。"
         case .unauthenticatedWithDiagnostics(let diagnostic): "Claude Code 未认证：\(diagnostic.summary)"
+        case .mcpPermissionDenied(let tools): "禅道 MCP 工具未授权：\(tools.joined(separator: ", "))"
+        case .mcpPermissionDeniedWithDiagnostics(let diagnostic): diagnostic.summary
         case .mcpUnavailable(let message): "MCP 服务不可用：\(Self.redacted(message))"
         case .mcpUnavailableWithDiagnostics(let diagnostic): "MCP 服务不可用：\(diagnostic.summary)"
         }
@@ -70,9 +76,20 @@ public enum ClaudeCodeClientError: Error, Equatable, LocalizedError, Sendable {
             return ClaudeCodeDiagnostic(phase: "parse", summary: "Claude Code 未返回有效 JSON。")
         case .invalidJSONWithDiagnostics(let diagnostic):
             return diagnostic
+        case .structuredOutputFailedWithDiagnostics(let diagnostic):
+            return diagnostic
         case .unauthenticated:
             return ClaudeCodeDiagnostic(phase: "authentication", summary: "Claude Code 未认证。")
         case .unauthenticatedWithDiagnostics(let diagnostic):
+            return diagnostic
+        case .mcpPermissionDenied(let tools):
+            return ClaudeCodeDiagnostic(
+                phase: "permission",
+                summary: "禅道 MCP 工具未授权：\(tools.joined(separator: ", "))",
+                mcpName: "zentao",
+                deniedTools: tools
+            )
+        case .mcpPermissionDeniedWithDiagnostics(let diagnostic):
             return diagnostic
         case .mcpUnavailable(let message):
             return ClaudeCodeDiagnostic(phase: "mcp", summary: "MCP 服务不可用。", stderr: Self.redacted(message), possibleMCPConnectionError: true)
@@ -104,6 +121,12 @@ public struct ClaudeCodeDiagnostic: Codable, Equatable, Sendable {
     public var timeoutKind: ClaudeCodeTimeoutKind?
     public var timeoutSeconds: Int
     public var possibleMCPConnectionError: Bool
+    public var responsePath: String?
+    public var expectedType: String?
+    public var actualType: String?
+    public var normalizationWarnings: [String]
+    public var deniedTools: [String]
+    public var structuredOutputRetryPerformed: Bool
 
     public init(
         phase: String,
@@ -115,7 +138,13 @@ public struct ClaudeCodeDiagnostic: Codable, Equatable, Sendable {
         configurationSource: ClaudeCodeMCPConfigurationSource? = nil,
         timeoutKind: ClaudeCodeTimeoutKind? = nil,
         timeoutSeconds: Int = 600,
-        possibleMCPConnectionError: Bool = false
+        possibleMCPConnectionError: Bool = false,
+        responsePath: String? = nil,
+        expectedType: String? = nil,
+        actualType: String? = nil,
+        normalizationWarnings: [String] = [],
+        deniedTools: [String] = [],
+        structuredOutputRetryPerformed: Bool = false
     ) {
         self.phase = phase
         self.summary = summary
@@ -127,6 +156,61 @@ public struct ClaudeCodeDiagnostic: Codable, Equatable, Sendable {
         self.timeoutKind = timeoutKind
         self.timeoutSeconds = timeoutSeconds
         self.possibleMCPConnectionError = possibleMCPConnectionError
+        self.responsePath = responsePath
+        self.expectedType = expectedType
+        self.actualType = actualType
+        self.normalizationWarnings = normalizationWarnings
+        self.deniedTools = deniedTools
+        self.structuredOutputRetryPerformed = structuredOutputRetryPerformed
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case phase, summary, executablePath, exitCode, stderr, mcpName
+        case configurationSource, timeoutKind, timeoutSeconds, possibleMCPConnectionError
+        case responsePath, expectedType, actualType, normalizationWarnings, deniedTools
+        case structuredOutputRetryPerformed
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            phase: try values.decode(String.self, forKey: .phase),
+            summary: try values.decode(String.self, forKey: .summary),
+            executablePath: try values.decodeIfPresent(String.self, forKey: .executablePath),
+            exitCode: try values.decodeIfPresent(Int32.self, forKey: .exitCode),
+            stderr: try values.decodeIfPresent(String.self, forKey: .stderr) ?? "",
+            mcpName: try values.decodeIfPresent(String.self, forKey: .mcpName),
+            configurationSource: try values.decodeIfPresent(ClaudeCodeMCPConfigurationSource.self, forKey: .configurationSource),
+            timeoutKind: try values.decodeIfPresent(ClaudeCodeTimeoutKind.self, forKey: .timeoutKind),
+            timeoutSeconds: try values.decodeIfPresent(Int.self, forKey: .timeoutSeconds) ?? 600,
+            possibleMCPConnectionError: try values.decodeIfPresent(Bool.self, forKey: .possibleMCPConnectionError) ?? false,
+            responsePath: try values.decodeIfPresent(String.self, forKey: .responsePath),
+            expectedType: try values.decodeIfPresent(String.self, forKey: .expectedType),
+            actualType: try values.decodeIfPresent(String.self, forKey: .actualType),
+            normalizationWarnings: try values.decodeIfPresent([String].self, forKey: .normalizationWarnings) ?? [],
+            deniedTools: try values.decodeIfPresent([String].self, forKey: .deniedTools) ?? [],
+            structuredOutputRetryPerformed: try values.decodeIfPresent(Bool.self, forKey: .structuredOutputRetryPerformed) ?? false
+        )
+    }
+}
+
+/// Parameters intentionally scoped to one Claude Code invocation.
+public struct ClaudeCodeInvocationOptions: Sendable, Equatable {
+    public var allowedTools: [String]
+    public var builtInTools: String?
+    public var permissionPrompts: String?
+    public var jsonSchema: String?
+
+    public init(
+        allowedTools: [String] = [],
+        builtInTools: String? = nil,
+        permissionPrompts: String? = nil,
+        jsonSchema: String? = nil
+    ) {
+        self.allowedTools = allowedTools
+        self.builtInTools = builtInTools
+        self.permissionPrompts = permissionPrompts
+        self.jsonSchema = jsonSchema
     }
 }
 
@@ -140,15 +224,35 @@ public struct ClaudeCodeProcessConfiguration: Sendable, Equatable {
     public var model: String?
     public var permissionMode: String?
     public var timeout: Duration
+    public var allowedTools: [String]
+    public var builtInTools: String?
+    public var permissionPrompts: String?
+    public var jsonSchema: String?
 
-    public init(prompt: String, workingDirectory: URL, executableURL: URL? = nil, mcpConfigURL: URL?, maxTurns: Int, model: String?, permissionMode: String?, timeout: Duration = .seconds(600)) {
+    public init(
+        prompt: String,
+        workingDirectory: URL,
+        executableURL: URL? = nil,
+        mcpConfigURL: URL?,
+        maxTurns: Int,
+        model: String?,
+        permissionMode: String?,
+        timeout: Duration = .seconds(600),
+        allowedTools: [String] = [],
+        builtInTools: String? = nil,
+        permissionPrompts: String? = nil,
+        jsonSchema: String? = nil
+    ) {
         self.prompt = prompt; self.workingDirectory = workingDirectory; self.executableURL = executableURL; self.mcpConfigURL = mcpConfigURL
         self.maxTurns = maxTurns; self.model = model; self.permissionMode = permissionMode; self.timeout = timeout
+        self.allowedTools = allowedTools; self.builtInTools = builtInTools
+        self.permissionPrompts = permissionPrompts; self.jsonSchema = jsonSchema
     }
 }
 
 public struct ClaudeCodeClient: Sendable {
     public typealias ResponseGenerator = @Sendable (String, URL, URL?, Int) async throws -> String
+    public typealias ConfiguredResponseGenerator = @Sendable (String, URL, URL?, Int, ClaudeCodeInvocationOptions) async throws -> String
     public typealias ProcessRunner = @Sendable (ClaudeCodeProcessConfiguration) async throws -> String
     private let runner: ProcessRunner
 
@@ -158,12 +262,50 @@ public struct ClaudeCodeClient: Sendable {
         }
     }
 
+    public init(configuredResponseGenerator: @escaping ConfiguredResponseGenerator) {
+        self.runner = { configuration in
+            try await configuredResponseGenerator(
+                configuration.prompt,
+                configuration.workingDirectory,
+                configuration.mcpConfigURL,
+                configuration.maxTurns,
+                ClaudeCodeInvocationOptions(
+                    allowedTools: configuration.allowedTools,
+                    builtInTools: configuration.builtInTools,
+                    permissionPrompts: configuration.permissionPrompts,
+                    jsonSchema: configuration.jsonSchema
+                )
+            )
+        }
+    }
+
     public init(processRunner: @escaping ProcessRunner = ClaudeCodeClient.defaultResponse) {
         self.runner = processRunner
     }
 
-    public func run(prompt: String, workingDirectory: URL, mcpConfigURL: URL? = nil, maxTurns: Int = 8, model: String? = nil, permissionMode: String? = nil, timeout: Duration = .seconds(600)) async throws -> String {
-        let configuration = ClaudeCodeProcessConfiguration(prompt: prompt, workingDirectory: workingDirectory, mcpConfigURL: mcpConfigURL, maxTurns: maxTurns, model: model, permissionMode: permissionMode, timeout: timeout)
+    public func run(
+        prompt: String,
+        workingDirectory: URL,
+        mcpConfigURL: URL? = nil,
+        maxTurns: Int = 8,
+        model: String? = nil,
+        permissionMode: String? = nil,
+        timeout: Duration = .seconds(600),
+        options: ClaudeCodeInvocationOptions = ClaudeCodeInvocationOptions()
+    ) async throws -> String {
+        let configuration = ClaudeCodeProcessConfiguration(
+            prompt: prompt,
+            workingDirectory: workingDirectory,
+            mcpConfigURL: mcpConfigURL,
+            maxTurns: maxTurns,
+            model: model,
+            permissionMode: permissionMode,
+            timeout: timeout,
+            allowedTools: options.allowedTools,
+            builtInTools: options.builtInTools,
+            permissionPrompts: options.permissionPrompts,
+            jsonSchema: options.jsonSchema
+        )
         return try await withThrowingTaskGroup(of: String.self) { group in
             group.addTask { try await self.runner(configuration) }
             group.addTask {
@@ -180,6 +322,18 @@ public struct ClaudeCodeClient: Sendable {
         var args = ["-p", configuration.prompt, "--output-format", "json", "--max-turns", String(max(1, configuration.maxTurns))]
         if let model = configuration.model, !model.isEmpty { args += ["--model", model] }
         if let permissionMode = configuration.permissionMode, !permissionMode.isEmpty { args += ["--permission-mode", permissionMode] }
+        if !configuration.allowedTools.isEmpty {
+            args += ["--allowed-tools", configuration.allowedTools.joined(separator: ",")]
+        }
+        if let builtInTools = configuration.builtInTools {
+            args += ["--tools", builtInTools]
+        }
+        if let permissionPrompts = configuration.permissionPrompts, !permissionPrompts.isEmpty {
+            args += ["--permission-prompts", permissionPrompts]
+        }
+        if let jsonSchema = configuration.jsonSchema, !jsonSchema.isEmpty {
+            args += ["--json-schema", jsonSchema]
+        }
         if let mcp = configuration.mcpConfigURL { args += ["--mcp-config", mcp.path] }
 
         do {
@@ -275,6 +429,31 @@ public struct ClaudeCodeClient: Sendable {
             let stderrMessage = error.trimmingCharacters(in: .whitespacesAndNewlines)
             let stdoutMessage = output.trimmingCharacters(in: .whitespacesAndNewlines)
             let message = [stderrMessage, stdoutMessage].filter { !$0.isEmpty }.joined(separator: "\n")
+            if let deniedTools = Self.permissionDeniedTools(in: message), !deniedTools.isEmpty {
+                throw ClaudeCodeClientError.mcpPermissionDeniedWithDiagnostics(
+                    ClaudeCodeDiagnostic(
+                        phase: "permission",
+                        summary: "禅道 MCP 工具未授权：\(deniedTools.joined(separator: ", "))",
+                        executablePath: executable.path,
+                        exitCode: process.terminationStatus,
+                        stderr: ClaudeCodeClient.redact(message),
+                        mcpName: "zentao",
+                        deniedTools: deniedTools
+                    )
+                )
+            }
+            if Self.looksLikeStructuredOutputFailure(message) {
+                throw ClaudeCodeClientError.structuredOutputFailedWithDiagnostics(
+                    ClaudeCodeDiagnostic(
+                        phase: "parse.schema",
+                        summary: "Claude Code 结构化输出未通过 JSON Schema 校验。",
+                        executablePath: executable.path,
+                        exitCode: process.terminationStatus,
+                        stderr: ClaudeCodeClient.redact(message),
+                        mcpName: "zentao"
+                    )
+                )
+            }
             if message.localizedCaseInsensitiveContains("mcp") || message.localizedCaseInsensitiveContains("ECONN") || message.localizedCaseInsensitiveContains("401") {
                 throw ClaudeCodeClientError.mcpUnavailableWithDiagnostics(
                     ClaudeCodeDiagnostic(phase: "mcp", summary: "禅道 MCP 连接或认证失败。", executablePath: executable.path, exitCode: process.terminationStatus, stderr: ClaudeCodeClient.redact(message), mcpName: "zentao", possibleMCPConnectionError: true)
@@ -298,7 +477,20 @@ public struct ClaudeCodeClient: Sendable {
             )
         }
         do {
-            return try parseResponse(output)
+            if let deniedTools = Self.permissionDeniedTools(in: output), !deniedTools.isEmpty {
+                throw ClaudeCodeClientError.mcpPermissionDeniedWithDiagnostics(
+                    ClaudeCodeDiagnostic(
+                        phase: "permission",
+                        summary: "禅道 MCP 工具未授权：\(deniedTools.joined(separator: ", "))",
+                        executablePath: executable.path,
+                        stderr: ClaudeCodeClient.redact(error),
+                        mcpName: "zentao",
+                        deniedTools: deniedTools
+                    )
+                )
+            }
+            let response = try parseResponse(output)
+            return response
         } catch ClaudeCodeClientError.invalidJSON {
             throw ClaudeCodeClientError.invalidJSONWithDiagnostics(
                 ClaudeCodeDiagnostic(
@@ -331,8 +523,31 @@ public struct ClaudeCodeClient: Sendable {
             || value.localizedCaseInsensitiveContains("401")
     }
 
+    private static func looksLikeStructuredOutputFailure(_ value: String) -> Bool {
+        let lowercased = value.lowercased()
+        return lowercased.contains("structured output")
+            || lowercased.contains("json schema")
+            || lowercased.contains("schema validation")
+    }
+
+    private static func permissionDeniedTools(in value: String) -> [String]? {
+        let lowercased = value.lowercased()
+        let markers = ["requested permissions", "haven't granted", "permission denied", "not authorized", "未授权"]
+        guard markers.contains(where: { lowercased.contains($0) }) else { return nil }
+        let pattern = #"mcp__zentao__[A-Za-z0-9_]+"#
+        guard let expression = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let range = NSRange(value.startIndex..<value.endIndex, in: value)
+        var names: [String] = []
+        expression.enumerateMatches(in: value, range: range) { match, _, _ in
+            guard let match, let matchRange = Range(match.range, in: value) else { return }
+            let name = String(value[matchRange])
+            if !names.contains(name) { names.append(name) }
+        }
+        return names
+    }
+
     /// Validates Claude Code's JSON envelope while preserving raw structured payloads.
-    static func parseResponse(_ output: String) throws -> String {
+    public static func parseResponse(_ output: String) throws -> String {
         let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
         let jsonText: String
         if let first = trimmed.firstIndex(of: "{"), let last = trimmed.lastIndex(of: "}") {
@@ -341,6 +556,10 @@ public struct ClaudeCodeClient: Sendable {
             jsonText = trimmed
         }
         guard let data = jsonText.data(using: .utf8), let object = try? JSONSerialization.jsonObject(with: data) else { throw ClaudeCodeClientError.invalidJSON }
+        if let dictionary = object as? [String: Any], let structuredOutput = dictionary["structured_output"], !(structuredOutput is NSNull), JSONSerialization.isValidJSONObject(structuredOutput) {
+            let data = try JSONSerialization.data(withJSONObject: structuredOutput, options: [.sortedKeys])
+            return String(data: data, encoding: .utf8) ?? output
+        }
         if let dictionary = object as? [String: Any], let result = dictionary["result"] as? String { return result }
         if let dictionary = object as? [String: Any], let content = dictionary["content"] as? String { return content }
         return output

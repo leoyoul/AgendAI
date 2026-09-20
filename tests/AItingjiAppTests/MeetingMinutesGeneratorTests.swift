@@ -1271,12 +1271,13 @@ struct AppStateMeetingMinutesTests {
         #expect(appState.saveTerminologyEntry(conflicting))
 
         let addedPersonID = try #require(appState.addPerson())
-        #expect(appState.people.first?.id == addedPersonID)
+        // 人员按创建日期正序，新增人员排在末尾。
+        #expect(appState.people.last?.id == addedPersonID)
         var addedPerson = try #require(appState.people.first(where: { $0.id == addedPersonID }))
         #expect(LibraryPlaceholderPolicy.isGeneratedPersonName(addedPerson.displayName))
         addedPerson.displayName = "吴敏政"
         #expect(appState.savePerson(addedPerson))
-        #expect(appState.people.first?.id == addedPersonID)
+        #expect(appState.people.last?.id == addedPersonID)
         let renamedPerson = try #require(appState.people.first(where: { $0.id == addedPersonID }))
         #expect(!renamedPerson.aliases.contains(where: LibraryPlaceholderPolicy.isGeneratedPersonName))
 

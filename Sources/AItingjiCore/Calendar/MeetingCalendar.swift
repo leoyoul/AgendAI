@@ -53,7 +53,182 @@ public struct MeetingCalendarLayoutItem: Equatable, Sendable {
     }
 }
 
+public struct MeetingCalendarQuarter: Equatable, Sendable {
+    public var interval: DateInterval
+    public var year: Int
+    public var number: Int
+    public var dates: [Date]
+
+    public var identifier: String { "\(year)-Q\(number)" }
+
+    public var displayName: String { "\(year)年第\(number)季度" }
+
+    public init(interval: DateInterval, year: Int, number: Int, dates: [Date]) {
+        self.interval = interval
+        self.year = year
+        self.number = number
+        self.dates = dates
+    }
+}
+
+public enum WorkbenchSpanKind: String, Equatable, Sendable {
+    case meeting
+    case workItem
+}
+
+/// 工作台甘特布局的输入。日期是本地自然日，结束日为包含式。
+public struct WorkbenchDateSpan: Equatable, Sendable {
+    public var id: String
+    public var kind: WorkbenchSpanKind
+    public var startDate: Date
+    public var endDate: Date
+
+    public init(id: String, kind: WorkbenchSpanKind, startDate: Date, endDate: Date) {
+        self.id = id
+        self.kind = kind
+        self.startDate = startDate
+        self.endDate = endDate
+    }
+}
+
+public struct WorkbenchTrackPlacement: Equatable, Sendable {
+    public var id: String
+    public var spanID: String
+    public var kind: WorkbenchSpanKind
+    public var startDayIndex: Int
+    public var endDayIndex: Int
+    public var track: Int
+    public var trackCount: Int
+    public var continuesFromPreviousQuarter: Bool
+    public var continuesIntoNextQuarter: Bool
+
+    public init(
+        id: String,
+        spanID: String,
+        kind: WorkbenchSpanKind,
+        startDayIndex: Int,
+        endDayIndex: Int,
+        track: Int,
+        trackCount: Int,
+        continuesFromPreviousQuarter: Bool,
+        continuesIntoNextQuarter: Bool
+    ) {
+        self.id = id
+        self.spanID = spanID
+        self.kind = kind
+        self.startDayIndex = startDayIndex
+        self.endDayIndex = endDayIndex
+        self.track = track
+        self.trackCount = trackCount
+        self.continuesFromPreviousQuarter = continuesFromPreviousQuarter
+        self.continuesIntoNextQuarter = continuesIntoNextQuarter
+    }
+}
+
 public enum MeetingCalendar {
+    public static func quarterInterval(
+        containing date: Date,
+        calendar: Calendar = .current
+    ) -> DateInterval {
+        let day = calendar.startOfDay(for: date)
+        let year = calendar.component(.year, from: day)
+        let month = calendar.component(.month, from: day)
+        let quarterStartMonth = ((month - 1) / 3) * 3 + 1
+        let start = calendar.date(from: DateComponents(year: year, month: quarterStartMonth, day: 1))!
+        let end = calendar.date(byAdding: .month, value: 3, to: start)!
+        return DateInterval(start: start, end: end)
+    }
+
+    public static func quarter(
+        containing date: Date,
+        calendar: Calendar = .current
+    ) -> MeetingCalendarQuarter {
+        let interval = quarterInterval(containing: date, calendar: calendar)
+        let year = calendar.component(.year, from: interval.start)
+        let month = calendar.component(.month, from: interval.start)
+        let number = ((month - 1) / 3) + 1
+        var dates: [Date] = []
+        var cursor = interval.start
+        while cursor < interval.end {
+            dates.append(cursor)
+            guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
+            cursor = next
+        }
+        return MeetingCalendarQuarter(interval: interval, year: year, number: number, dates: dates)
+    }
+
+    public static func workbenchLayout(
+        for spans: [WorkbenchDateSpan],
+        in quarterInterval: DateInterval,
+        calendar: Calendar = .current
+    ) -> [WorkbenchTrackPlacement] {
+        let quarterStart = calendar.startOfDay(for: quarterInterval.start)
+        let dayCount = dates(in: quarterInterval, calendar: calendar).count
+        guard dayCount > 0 else { return [] }
+        let quarterEnd = calendar.date(byAdding: .day, value: dayCount, to: quarterStart) ?? quarterInterval.end
+        var placements: [(placement: WorkbenchTrackPlacement, start: Int, end: Int)] = []
+
+        for span in spans {
+            let start = calendar.startOfDay(for: min(span.startDate, span.endDate))
+            let end = calendar.startOfDay(for: max(span.startDate, span.endDate))
+            guard start < quarterEnd, end >= quarterStart else { continue }
+
+            let clippedStart = max(start, quarterStart)
+            let clippedEnd = min(end, calendar.date(byAdding: .day, value: -1, to: quarterEnd) ?? end)
+            let startIndex = max(0, calendar.dateComponents([.day], from: quarterStart, to: clippedStart).day ?? 0)
+            let endIndex = min(dayCount - 1, calendar.dateComponents([.day], from: quarterStart, to: clippedEnd).day ?? dayCount - 1)
+            guard startIndex <= endIndex else { continue }
+            let placement = WorkbenchTrackPlacement(
+                id: span.id,
+                spanID: span.id,
+                kind: span.kind,
+                startDayIndex: startIndex,
+                endDayIndex: endIndex,
+                track: 0,
+                trackCount: 1,
+                continuesFromPreviousQuarter: start < quarterStart,
+                continuesIntoNextQuarter: end >= quarterEnd
+            )
+            placements.append((placement, startIndex, endIndex))
+        }
+
+        var sorted = placements.sorted {
+            if $0.start != $1.start { return $0.start < $1.start }
+            if $0.end != $1.end { return $0.end > $1.end }
+            return $0.placement.id < $1.placement.id
+        }
+        var trackEnds: [Int] = []
+        for index in sorted.indices {
+            let reusable = trackEnds.firstIndex(where: { $0 < sorted[index].start })
+            let track: Int
+            if let reusable {
+                track = reusable
+                trackEnds[reusable] = sorted[index].end
+            } else {
+                track = trackEnds.count
+                trackEnds.append(sorted[index].end)
+            }
+            sorted[index].placement.track = track
+        }
+        let trackCount = max(1, trackEnds.count)
+        return sorted.map {
+            var placement = $0.placement
+            placement.trackCount = trackCount
+            return placement
+        }
+    }
+
+    private static func dates(in interval: DateInterval, calendar: Calendar) -> [Date] {
+        var dates: [Date] = []
+        var cursor = calendar.startOfDay(for: interval.start)
+        while cursor < interval.end {
+            dates.append(cursor)
+            guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
+            cursor = next
+        }
+        return dates
+    }
+
     public static func weekInterval(
         containing date: Date,
         calendar: Calendar = .current

@@ -323,6 +323,21 @@ public struct VoiceprintPerson: Codable, Identifiable, Equatable, Sendable {
     public var zentaoUserID: String
     public var threshold: Double
     public var isActive: Bool
+    public var isCalendarVisible: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case displayName
+        case aliases
+        case jobTitle
+        case roleTags
+        case responsibilities
+        case zentaoAccount
+        case zentaoUserID
+        case threshold
+        case isActive
+        case isCalendarVisible
+    }
 
     public init(
         id: String,
@@ -334,7 +349,8 @@ public struct VoiceprintPerson: Codable, Identifiable, Equatable, Sendable {
         zentaoAccount: String = "",
         zentaoUserID: String = "",
         threshold: Double = VoiceprintMatchingPolicy.minimumPersonThreshold,
-        isActive: Bool = true
+        isActive: Bool = true,
+        isCalendarVisible: Bool = false
     ) {
         self.id = id
         self.displayName = displayName
@@ -346,6 +362,22 @@ public struct VoiceprintPerson: Codable, Identifiable, Equatable, Sendable {
         self.zentaoUserID = zentaoUserID
         self.threshold = threshold
         self.isActive = isActive
+        self.isCalendarVisible = isCalendarVisible
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        displayName = try container.decode(String.self, forKey: .displayName)
+        aliases = try container.decode([String].self, forKey: .aliases)
+        jobTitle = try container.decode(String.self, forKey: .jobTitle)
+        roleTags = try container.decode([String].self, forKey: .roleTags)
+        responsibilities = try container.decode(String.self, forKey: .responsibilities)
+        zentaoAccount = try container.decode(String.self, forKey: .zentaoAccount)
+        zentaoUserID = try container.decode(String.self, forKey: .zentaoUserID)
+        threshold = try container.decode(Double.self, forKey: .threshold)
+        isActive = try container.decode(Bool.self, forKey: .isActive)
+        isCalendarVisible = try container.decodeIfPresent(Bool.self, forKey: .isCalendarVisible) ?? false
     }
 }
 

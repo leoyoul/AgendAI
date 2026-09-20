@@ -395,12 +395,13 @@ struct PiAgentRPCClientTests {
                 + #"{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","delta":"核对人员库"}}"# + "\n"
                 + #"{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":""#).utf8
         )
-        let suffix = Data(
-            (#""}}"# + "\n"
-                + #"{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"好"}}"# + "\n"
-                + #"{"type":"agent_end","messages":[]}"# + "\n"
-                + #"{"type":"response","command":"get_session_stats","success":true,"data":{"userMessages":2,"assistantMessages":2,"toolCalls":1,"tokens":{"input":1000,"output":200,"cacheRead":100,"cacheWrite":0,"total":1300},"contextUsage":{"tokens":900,"contextWindow":32000,"percent":2.8}}}"# + "\n").utf8
-        )
+        let suffixLines: [String] = [
+            #""}}"#,
+            #"{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"好"}}"#,
+            #"{"type":"agent_end","messages":[]}"#,
+            #"{"type":"response","command":"get_session_stats","success":true,"data":{"userMessages":2,"assistantMessages":2,"toolCalls":1,"tokens":{"input":1000,"output":200,"cacheRead":100,"cacheWrite":0,"total":1300},"contextUsage":{"tokens":900,"contextWindow":32000,"percent":2.8}}}"#,
+        ]
+        let suffix = Data((suffixLines.joined(separator: "\n") + "\n").utf8)
         let firstCharacter = Array(Data("你".utf8))
         return [
             prefix + Data(firstCharacter.prefix(1)),

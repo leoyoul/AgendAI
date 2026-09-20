@@ -2,6 +2,7 @@ import Foundation
 
 public enum WorkspaceDestination: Equatable, Hashable, Sendable {
     case calendar
+    case workItemPool
     case agentSettings
     case models
     case vocabulary
@@ -29,6 +30,12 @@ public struct MeetingWorkspaceNavigation: Equatable, Sendable {
     public var displayedWeekDate: Date
     public var settingsReturnDestination: WorkspaceDestination
 
+    /// 兼容旧版持久化/调用方名称；当前语义是季度锚点日期。
+    public var displayedQuarterDate: Date {
+        get { displayedWeekDate }
+        set { displayedWeekDate = newValue }
+    }
+
     public var detailMeetingID: Meeting.ID? {
         get { destination.meetingID }
         set {
@@ -45,6 +52,17 @@ public struct MeetingWorkspaceNavigation: Equatable, Sendable {
         destination = .calendar
         lastNonMeetingDestination = .calendar
         self.displayedWeekDate = displayedWeekDate
+        settingsReturnDestination = .calendar
+    }
+
+    /// Restores the primary workspace to the predictable state used for a new app launch.
+    ///
+    /// The date is intentionally supplied by the caller so this value type remains
+    /// deterministic and easy to test.
+    public mutating func resetToLaunchDefaults(today: Date) {
+        destination = .calendar
+        lastNonMeetingDestination = .calendar
+        displayedWeekDate = today
         settingsReturnDestination = .calendar
     }
 

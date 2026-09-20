@@ -15,6 +15,37 @@ struct MeetingWorkspaceNavigationTests {
         #expect(navigation.detailMeetingID == nil)
     }
 
+    @Test("launch defaults reset the workspace to today without retaining a meeting")
+    func resetsToLaunchDefaults() {
+        var navigation = MeetingWorkspaceNavigation(displayedWeekDate: displayedWeekDate)
+        _ = navigation.openMeeting("old-meeting")
+        navigation.enterSettings()
+
+        let today = Date(timeIntervalSince1970: 1_800_000_000)
+        navigation.resetToLaunchDefaults(today: today)
+
+        #expect(navigation.destination == .calendar)
+        #expect(navigation.lastNonMeetingDestination == .calendar)
+        #expect(navigation.settingsReturnDestination == .calendar)
+        #expect(navigation.detailMeetingID == nil)
+        #expect(navigation.displayedWeekDate == today)
+    }
+
+    @Test("task pool is a non-meeting workspace destination")
+    func taskPoolNavigation() {
+        var navigation = MeetingWorkspaceNavigation(displayedWeekDate: displayedWeekDate)
+
+        let didSelectTaskPool = navigation.selectDestination(.workItemPool)
+        #expect(didSelectTaskPool)
+        #expect(navigation.destination == .workItemPool)
+        #expect(navigation.lastNonMeetingDestination == .workItemPool)
+
+        let didOpenMeeting = navigation.openMeeting("meeting-from-pool")
+        #expect(didOpenMeeting)
+        navigation.detailMeetingID = nil
+        #expect(navigation.destination == .workItemPool)
+    }
+
     @Test("opening and leaving a meeting preserves the previous workspace")
     func preservesLastNonMeetingDestination() {
         var navigation = MeetingWorkspaceNavigation(displayedWeekDate: displayedWeekDate)

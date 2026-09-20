@@ -30,6 +30,8 @@ struct MeetingListView: View {
                         ? Color.accentColor.opacity(0.12)
                         : Color.clear
                 )
+                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                .listRowSeparator(.hidden)
             }
 
             if filteredMeetings.isEmpty {
@@ -78,28 +80,37 @@ private struct MeetingSidebarRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             activityIndicator
-                .frame(width: 14, height: 24)
+                .frame(width: AppLayoutMetrics.Sidebar.iconSlotWidth, height: 24)
 
             Button(action: onSelect) {
-                VStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: AppLayoutMetrics.Sidebar.meetingContentSpacing) {
                     Text(meeting.title)
-                        .font(.headline)
+                        .font(AppTypography.meetingTitle)
                         .lineLimit(2)
+                        .lineSpacing(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    Text(listTime)
-                        .font(.caption.monospacedDigit())
+                    HStack(spacing: 5) {
+                        Text(listTime)
+                        Text("·")
+                        Text("\(meeting.status.displayName) · \(meeting.captureSource.displayName)")
+                    }
+                        .font(AppTypography.meetingMetadata)
                         .foregroundStyle(.secondary)
-                    Text("\(meeting.status.displayName) · \(meeting.captureSource.displayName)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .help(meeting.title)
+            .accessibilityLabel("会议：\(meeting.title)")
 
             Button(action: onArchive) {
                 Image(systemName: "archivebox")
-                    .frame(width: 24, height: 24)
+                    .frame(
+                        width: AppLayoutMetrics.Sidebar.archiveButtonSize,
+                        height: AppLayoutMetrics.Sidebar.archiveButtonSize
+                    )
             }
             .buttonStyle(.borderless)
             .opacity(showsArchiveButton ? 1 : 0)
@@ -110,7 +121,8 @@ private struct MeetingSidebarRow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .padding(.vertical, 4)
+        .padding(.horizontal, AppLayoutMetrics.Sidebar.horizontalPadding)
+        .padding(.vertical, AppLayoutMetrics.Sidebar.meetingRowVerticalPadding)
         .onHover { hovering in
             isHovering = hovering
             let generation = UUID()
@@ -148,24 +160,21 @@ private struct MeetingSidebarRow: View {
 
     @ViewBuilder
     private var activityIndicator: some View {
-        switch activity {
-        case .recording:
-            Image(systemName: "record.circle.fill")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.red)
-                .symbolEffect(.pulse, options: .repeating)
-                .accessibilityLabel("正在录音")
-        case .postprocessing:
-            ProgressView()
-                .controlSize(.mini)
-                .accessibilityLabel("会议纪要排队或生成中")
-        case .recentlyCompleted:
-            Circle()
-                .fill(Color.accentColor)
-                .frame(width: 8, height: 8)
-                .accessibilityLabel("会议纪要已生成")
-        case .none:
-            Color.clear
+        let presentation = MeetingRecordIconPresentation(activity: activity)
+        Image(systemName: presentation.systemImage)
+            .font(AppTypography.meetingIcon)
+            .foregroundStyle(iconColor(for: presentation))
+            .frame(width: AppLayoutMetrics.Sidebar.iconSlotWidth, height: 24)
+            .symbolEffect(.pulse, options: .repeating, isActive: presentation.isPulsing)
+            .accessibilityLabel(presentation.accessibilityLabel)
+    }
+
+    private func iconColor(for presentation: MeetingRecordIconPresentation) -> Color {
+        switch presentation {
+        case .standard: .secondary
+        case .recording: .red
+        case .processing: .blue
+        case .recentlyCompleted: .accentColor
         }
     }
 

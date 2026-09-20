@@ -312,6 +312,85 @@ struct MeetingCalendarTests {
         #expect(!item.continuesIntoNextDay)
     }
 
+    @Test(arguments: [
+        (2024, 1, 15, 1, 91),
+        (2024, 4, 15, 2, 91),
+        (2024, 7, 15, 3, 92),
+        (2024, 10, 15, 4, 92),
+        (2023, 7, 15, 3, 92)
+    ])
+    func quarterRangeUsesNaturalCalendarDays(year: Int, month: Int, day: Int, number: Int, expectedDays: Int) {
+        let quarter = MeetingCalendar.quarter(
+            containing: date(year, month, day),
+            calendar: calendar
+        )
+
+        #expect(quarter.number == number)
+        #expect(quarter.dates.count == expectedDays)
+        #expect(quarter.dates.first == quarter.interval.start)
+        #expect(quarter.dates.last == calendar.date(byAdding: .day, value: -1, to: quarter.interval.end))
+    }
+
+    @Test
+    func quarterIdentityAndDisplayNameUseResolvedCalendarValues() {
+        let quarter = MeetingCalendar.quarter(
+            containing: date(2026, 7, 8),
+            calendar: calendar
+        )
+
+        #expect(quarter.identifier == "2026-Q3")
+        #expect(quarter.displayName == "2026年第3季度")
+    }
+
+    @Test
+    func workbenchGanttClipsQuarterEdgesAndAllocatesOverlappingTracks() {
+        let interval = MeetingCalendar.quarterInterval(
+            containing: date(2026, 7, 15),
+            calendar: calendar
+        )
+        let spans = [
+            WorkbenchDateSpan(
+                id: "cross-quarter",
+                kind: .workItem,
+                startDate: date(2026, 6, 28),
+                endDate: date(2026, 7, 3)
+            ),
+            WorkbenchDateSpan(
+                id: "overlap-a",
+                kind: .workItem,
+                startDate: date(2026, 7, 10),
+                endDate: date(2026, 7, 12)
+            ),
+            WorkbenchDateSpan(
+                id: "overlap-b",
+                kind: .meeting,
+                startDate: date(2026, 7, 12),
+                endDate: date(2026, 7, 14)
+            ),
+            WorkbenchDateSpan(
+                id: "reuse-track",
+                kind: .workItem,
+                startDate: date(2026, 7, 15),
+                endDate: date(2026, 7, 16)
+            )
+        ]
+
+        let placements = MeetingCalendar.workbenchLayout(
+            for: spans,
+            in: interval,
+            calendar: calendar
+        )
+        let byID = Dictionary(uniqueKeysWithValues: placements.map { ($0.spanID, $0) })
+
+        #expect(byID["cross-quarter"]?.startDayIndex == 0)
+        #expect(byID["cross-quarter"]?.endDayIndex == 2)
+        #expect(byID["cross-quarter"]?.continuesFromPreviousQuarter == true)
+        #expect(byID["overlap-a"]?.track == 0)
+        #expect(byID["overlap-b"]?.track == 1)
+        #expect(byID["reuse-track"]?.track == 0)
+        #expect(placements.allSatisfy { $0.trackCount == 2 })
+    }
+
     private func layout(
         _ meetings: [Meeting],
         now: Date? = nil,

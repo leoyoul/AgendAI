@@ -92,7 +92,11 @@ struct ClaudeCodeClientTests {
             maxTurns: 4,
             model: "sonnet",
             permissionMode: "acceptEdits",
-            timeout: .seconds(2)
+            timeout: .seconds(2),
+            allowedTools: ["mcp__zentao__get_projects", "mcp__zentao__get_users"],
+            builtInTools: "",
+            permissionPrompts: "none",
+            jsonSchema: "{\"type\":\"object\"}"
         )
         let result = try await ClaudeCodeClient.defaultResponse(configuration)
         #expect(result == "ok")
@@ -102,7 +106,46 @@ struct ClaudeCodeClientTests {
         #expect(arguments.contains("--max-turns\n4"))
         #expect(arguments.contains("--model\nsonnet"))
         #expect(arguments.contains("--permission-mode\nacceptEdits"))
+        #expect(arguments.contains("--allowed-tools\nmcp__zentao__get_projects,mcp__zentao__get_users"))
+        #expect(arguments.contains("--tools\n\n"))
+        #expect(arguments.contains("--permission-prompts\nnone"))
+        #expect(arguments.contains("--json-schema\n{\"type\":\"object\"}"))
         #expect(arguments.contains("--mcp-config\n\(mcpURL.path)"))
+    }
+
+    @Test("prefers Claude structured_output over the textual result envelope")
+    func parsesStructuredOutputEnvelope() throws {
+        let output = "{\"result\":\"fallback\",\"structured_output\":{\"meetingID\":\"m\",\"todos\":[]}}"
+        #expect(try ClaudeCodeClient.parseResponse(output) == "{\"meetingID\":\"m\",\"todos\":[]}" )
+    }
+
+    @Test("maps denied MCP tools to a permission diagnostic")
+    func mapsPermissionDeniedOutput() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let script = root.appendingPathComponent("mock-claude-permission.sh")
+        let output = "Claude requested permissions to use mcp__zentao__get_projects; permission denied."
+        try Data("#!/bin/sh\nprintf '%s' '\(output)'\n".utf8).write(to: script)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
+        let configuration = ClaudeCodeProcessConfiguration(
+            prompt: "匹配禅道", workingDirectory: root, executableURL: script,
+            mcpConfigURL: nil, maxTurns: 1, model: nil, permissionMode: nil,
+            timeout: .seconds(2), allowedTools: ["mcp__zentao__get_projects"],
+            builtInTools: "", permissionPrompts: "none"
+        )
+
+        do {
+            _ = try await ClaudeCodeClient.defaultResponse(configuration)
+            Issue.record("预期权限错误")
+        } catch let error as ClaudeCodeClientError {
+            guard case .mcpPermissionDeniedWithDiagnostics(let diagnostic) = error else {
+                Issue.record("收到非预期错误：\(error.localizedDescription)")
+                return
+            }
+            #expect(diagnostic.deniedTools == ["mcp__zentao__get_projects"])
+            #expect(diagnostic.phase == "permission")
+        }
     }
 
     @Test("terminates a stalled Claude Code process and returns timeout diagnostics")

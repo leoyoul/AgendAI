@@ -378,14 +378,17 @@ struct MeetingMinutesGenerator: Sendable {
             draft = vocabulary.normalize(selectedDraftFromInitialResponse)
         }
 
-        let document = vocabulary.normalize(
-            Self.makeDocument(
-                meeting: meeting,
-                segments: segments,
-                draft: draft,
-                notes: includedNotes,
-                preparedAt: now()
-            )
+        let document = Self.resolvingActionOwners(
+            vocabulary.normalize(
+                Self.makeDocument(
+                    meeting: meeting,
+                    segments: segments,
+                    draft: draft,
+                    notes: includedNotes,
+                    preparedAt: now()
+                )
+            ),
+            vocabulary: vocabulary
         )
         let artifact = MeetingMinutesArtifact(
             document: document,
@@ -1200,6 +1203,27 @@ struct MeetingMinutesGenerator: Sendable {
             .filter { !$0.isEmpty }
             .filter { seen.insert($0).inserted }
         return normalized.isEmpty ? ["待确认"] : normalized
+    }
+
+    /// 记录的负责人必须再按人员库归一一次：命中人员库就写成标准姓名，
+    /// 人员库确实没有对应人员时保留原文姓名。词库归一只能处理已登记的称呼，
+    /// 这里补上“张老师”这类带称谓的写法。
+    static func resolvingActionOwners(
+        _ document: MeetingMinutesDocument,
+        vocabulary: MeetingMinutesVocabulary
+    ) -> MeetingMinutesDocument {
+        guard !vocabulary.people.isEmpty else { return document }
+        let resolver = PersonNameResolver(people: vocabulary.people)
+        var result = document
+        result.actions = document.actions.map { action in
+            var seen: Set<String> = []
+            var updated = action
+            updated.owners = action.owners
+                .map { resolver.canonicalName(for: $0) }
+                .filter { seen.insert($0).inserted }
+            return updated
+        }
+        return result
     }
 
     static func requestText(

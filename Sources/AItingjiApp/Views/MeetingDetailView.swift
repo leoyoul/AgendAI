@@ -13,6 +13,7 @@ struct MeetingDetailView: View {
     @State private var showingFollowUpDiagnostics = false
     @State private var showsImageImporter = false
     @State private var imageImporterNoteID: MeetingNote.ID?
+    @State private var editingWorkItem: WorkItem?
     let meeting: Meeting
     let onOpenMeeting: (Meeting.ID) -> Void
 
@@ -46,7 +47,6 @@ struct MeetingDetailView: View {
 
             tabContentContainer
         }
-        .background(Color(nsColor: .windowBackgroundColor))
         .onAppear {
             titleText = meeting.title
             if meeting.captureSource == .imported {
@@ -69,6 +69,22 @@ struct MeetingDetailView: View {
             allowsMultipleSelection: true,
             onCompletion: handleImageImport
         )
+        .popover(item: $editingWorkItem, arrowEdge: .top) { item in
+            WorkItemEditorView(
+                item: item,
+                people: appState.people,
+                onSave: { appState.updateWorkItem($0) ? nil : appState.statusMessage },
+                onDelete: {
+                    _ = appState.deleteWorkItem(item.id)
+                    editingWorkItem = nil
+                },
+                onOpenSourceMeeting: { meetingID in
+                    editingWorkItem = nil
+                    _ = appState.selectMeeting(meetingID)
+                },
+                onCancel: { editingWorkItem = nil }
+            )
+        }
         .onChange(of: meeting.title) { _, newTitle in
             titleText = newTitle
         }
@@ -138,8 +154,12 @@ struct MeetingDetailView: View {
                     .onSubmit {
                         appState.updateSelectedMeetingTitle(titleText)
                     }
-                Text("状态：\(meeting.status.displayName) · 来源：\(meeting.captureSource.displayName)")
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    MeetingStatusBadge(status: meeting.status)
+                    Text("来源：\(meeting.captureSource.displayName)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Text("音频：\(meeting.audioFilePath == nil ? "未保存" : "已保存")")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -364,8 +384,44 @@ struct MeetingDetailView: View {
                 )
                 .frame(maxWidth: .infinity, minHeight: 180)
             }
+
+            meetingWorkItemsPanel
         }
         .panelStyle()
+    }
+
+    private var meetingWorkItemsPanel: some View {
+        let trackedItems = appState.workItems.filter { $0.sourceMeetingID == meeting.id }
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("工作台跟踪")
+                    .font(.headline)
+                Spacer()
+                Text("可在工作台继续编辑")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if trackedItems.isEmpty {
+                Text("当前会议还没有同步到工作台的任务。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(trackedItems) { item in
+                        MeetingWorkItemRow(
+                            item: item,
+                            people: appState.people,
+                            onEdit: { editingWorkItem = item },
+                            onStatusChange: { status in
+                                _ = appState.setWorkItemStatus(item.id, status: status)
+                            }
+                        )
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(Color.purple.opacity(0.045), in: RoundedRectangle(cornerRadius: 10))
     }
 
     private var meetingFollowUpsPanel: some View {
@@ -456,7 +512,7 @@ struct MeetingDetailView: View {
                                     Label(todo.status == .handedOff ? "已交接" : "交接到禅道", systemImage: todo.status == .handedOff ? "checkmark.circle" : "arrow.up.right.square")
                                 }
                                 .buttonStyle(.bordered)
-                                .disabled(todo.status == .handedOff || todo.status == .pending || todo.status == .failed)
+                                .disabled(todo.status != .matched)
                                 .padding(8)
                             }
                         }
@@ -477,6 +533,31 @@ struct MeetingDetailView: View {
                     LabeledContent("退出码", value: diagnostic.exitCode.map(String.init) ?? "无")
                     LabeledContent("MCP", value: diagnostic.mcpName ?? "zentao")
                     LabeledContent("配置来源", value: diagnostic.configurationSource?.displayName ?? "未知")
+                    if !diagnostic.deniedTools.isEmpty {
+                        LabeledContent("未授权工具", value: diagnostic.deniedTools.joined(separator: ", "))
+                    }
+                    if let responsePath = diagnostic.responsePath {
+                        LabeledContent("响应路径", value: responsePath)
+                    }
+                    if let expectedType = diagnostic.expectedType,
+                       let actualType = diagnostic.actualType {
+                        LabeledContent("类型", value: "期望 " + expectedType + "，实际 " + actualType)
+                    }
+                    if diagnostic.structuredOutputRetryPerformed {
+                        LabeledContent("结构化重试", value: "已执行 1 次")
+                    }
+                    if !diagnostic.normalizationWarnings.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("归一化警告")
+                                .font(.headline)
+                            Text(diagnostic.normalizationWarnings.joined(separator: "\n"))
+                                .font(.system(.caption, design: .monospaced))
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(8)
+                                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+                        }
+                    }
                     if let timeoutKind = diagnostic.timeoutKind {
                         LabeledContent("超时类型", value: timeoutKind.displayName)
                     }
@@ -572,6 +653,8 @@ struct MeetingDetailView: View {
                         .font(.headline)
                     MeetingAnalysisTodoTable(meetingID: meeting.id, todos: artifact.document.todos)
                 }
+
+                meetingWorkItemsPanel
 
                 Divider()
 
@@ -778,6 +861,63 @@ private enum MeetingDetailTab: String, CaseIterable, Identifiable {
         case .analysis: "sparkles.rectangle.stack"
         case .agent: "terminal"
         }
+    }
+}
+
+private struct MeetingWorkItemRow: View {
+    let item: WorkItem
+    let people: [VoiceprintPerson]
+    let onEdit: () -> Void
+    let onStatusChange: (WorkItemStatus) -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: item.status == .completed ? "checkmark.circle.fill" : "circle")
+                .foregroundStyle(item.status == .completed ? .green : .purple)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.title)
+                    .font(.subheadline.weight(.medium))
+                Text(details)
+                    .font(.caption)
+                    .foregroundStyle(item.isOverdue() ? .red : .secondary)
+                    .lineLimit(2)
+            }
+            Spacer()
+            Menu(item.status.displayName) {
+                ForEach(WorkItemStatus.allCases, id: \.self) { status in
+                    Button(status.displayName) { onStatusChange(status) }
+                }
+            }
+            .menuStyle(.borderlessButton)
+            Button("打开工作台任务", action: onEdit)
+                .buttonStyle(.bordered)
+        }
+        .padding(10)
+        .background(Color.purple.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var details: String {
+        let ownerText: String
+        if let ownerID = item.ownerPersonIDs.first,
+           let owner = people.first(where: { $0.id == ownerID }) {
+            ownerText = owner.displayName
+        } else if !item.ownerNameHints.isEmpty {
+            ownerText = "待匹配：" + item.ownerNameHints.joined(separator: "、")
+        } else {
+            ownerText = "负责人待确认"
+        }
+        let dateText: String
+        if let start = item.plannedStartDate, let end = item.plannedEndDate {
+            dateText = "\(start.formatted(.dateTime.year().month().day())) - \(end.formatted(.dateTime.year().month().day()))"
+        } else if let start = item.plannedStartDate ?? item.plannedEndDate {
+            dateText = start.formatted(.dateTime.year().month().day())
+        } else {
+            dateText = "日期待补充"
+        }
+        let tags = item.tags.isEmpty ? "无标签" : "标签：" + item.tags.joined(separator: "、")
+        return [ownerText, dateText, item.priority.displayName + "优先级", tags, item.status.displayName]
+            .joined(separator: " · ")
+            + (item.isOverdue() ? " · 已逾期" : "")
     }
 }
 

@@ -103,7 +103,7 @@ struct MeetingAnalysisGenerator: Sendable {
             draft = try Self.decodeDraft(response)
         }
 
-        let activeNames = Set(people.filter(\.isActive).map(\.displayName))
+        let resolver = PersonNameResolver(people: people)
         let document = MeetingAnalysisDocument(
             meetingID: meeting.id,
             title: draft.title.trimmedNonempty ?? "\(meeting.title) AI 分析会议纪要",
@@ -116,7 +116,8 @@ struct MeetingAnalysisGenerator: Sendable {
                 guard let item = todo.item.trimmedNonempty,
                       let task = todo.task.trimmedNonempty else { return nil }
                 let proposedOwner = todo.owner.trimmedNonempty ?? "待确认"
-                let owner = activeNames.contains(proposedOwner) ? proposedOwner : "待确认"
+                // 人员库能匹配上就写成标准姓名；人员库确实没有这个人才保留原文姓名。
+                let owner = resolver.canonicalName(for: proposedOwner)
                 return MeetingAnalysisTodo(
                     id: todo.id.trimmedNonempty ?? "todo-\(index + 1)",
                     item: item,
@@ -221,10 +222,10 @@ struct MeetingAnalysisGenerator: Sendable {
         \(effectiveInstructions)
 
         【任务分工派发规则】
-        1. 输出必须包含任务分工派发内容；每条任务的 owner 只能使用下方启用人员的标准姓名，不能输出会议外的人名、禅道账号、用户 ID 或岗位名称。
+        1. 输出必须包含任务分工派发内容；每条任务的 owner 必须优先使用下方启用人员的标准姓名，把“张老师”“李总”这类称呼归一到对应人员的标准姓名，不能输出禅道账号、用户 ID 或岗位名称。
         2. 会议明确指定的负责人优先保留；会议未明确指定时，先按职责匹配，再优先选择有禅道账号的合适人员，只有没有合适的禅道账号人员时才选择无禅道账号人员。
         3. 人员库中的“第一优先级”表示有禅道账号，“第二优先级”表示无禅道账号；不要因为优先级而把不相关人员强行分派给任务。
-        4. 无法从启用人员中可靠匹配负责人时，owner 写“待确认”，并在 assignment_basis 中说明原因；不得编造人员。
+        4. 只有人员库中确实没有对应人员时，才保留会议原文中的负责人姓名，并在 assignment_basis 中说明未能匹配人员库；不得编造人员。
 
         【当前时间】
         \(formatter.string(from: now))

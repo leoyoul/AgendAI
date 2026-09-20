@@ -91,6 +91,62 @@ struct MeetingMinutesVocabularyTests {
         #expect(segment.rawText == "李总安排示例准备方案。")
     }
 
+    @Test("app state feeds the people table into standard minutes generation")
+    @MainActor
+    func appStateInjectsPeopleIntoMinutes() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tinglan-vocabulary-appstate-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try AppPersistenceStore(path: directory.appendingPathComponent("test.sqlite").path)
+        let meeting = Meeting(
+            id: "vocabulary-appstate-meeting",
+            title: "示例项目周会",
+            status: .done,
+            createdAt: Date(timeIntervalSince1970: 1_784_236_800)
+        )
+        try store.upsertMeeting(meeting)
+        try store.upsertSegment(TranscriptSegment(
+            id: "vocabulary-appstate-segment",
+            meetingID: meeting.id,
+            startMs: 0,
+            endMs: 2_000,
+            speakerLabel: "李总",
+            rawText: "李总安排示例准备方案。"
+        ))
+        try store.upsertPerson(VoiceprintPerson(
+            id: "person-liming",
+            displayName: "李明",
+            aliases: ["李总", "小李"]
+        ))
+        try store.upsertModelSource(ModelSource(
+            id: "vocabulary-appstate-model",
+            type: .agent,
+            name: "Mock",
+            baseURL: "mock://meeting-minutes",
+            selectedModel: "mock",
+            isDefault: true,
+            enabled: true
+        ))
+
+        let generator = MeetingMinutesGenerator(
+            storageDirectory: directory.appendingPathComponent("minutes", isDirectory: true)
+        )
+        let appState = AppState(
+            storeFactory: { store },
+            pendingTranscriptionRootURL: directory.appendingPathComponent("PendingASR"),
+            resumePendingTranscriptions: false,
+            meetingMinutesGenerator: generator
+        )
+        #expect(appState.selectMeeting(meeting.id))
+        appState.generateSelectedMeetingMinutes()
+        for _ in 0..<200 where appState.generatingMeetingMinutesIDs.contains(meeting.id) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        #expect(appState.selectedMeetingMinutesArtifact?.document.participants == ["李明"])
+    }
+
     private func fixtureVocabulary() -> MeetingMinutesVocabulary {
         MeetingMinutesVocabulary(
             terminologyEntries: [

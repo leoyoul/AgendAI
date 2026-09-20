@@ -117,6 +117,12 @@ private struct PersonLibraryRow: View {
                     .foregroundStyle(.green)
                     .help("当前用户")
             }
+            if person.isActive && person.isCalendarVisible {
+                Image(systemName: "calendar.badge.checkmark")
+                    .foregroundStyle(Color.accentColor)
+                    .help("显示在工作台日历")
+                    .accessibilityLabel("显示在工作台日历")
+            }
             if !person.zentaoAccount.isEmpty {
                 Image(systemName: "link")
                     .foregroundStyle(.secondary)
@@ -152,6 +158,9 @@ private struct PersonEditorView: View {
                 TextField("岗位", text: $draft.jobTitle)
                 TextField("角色标签", text: $rolesText)
                 Toggle("启用", isOn: $draft.isActive)
+                Toggle("在工作台日历显示", isOn: $draft.isCalendarVisible)
+                    .disabled(!draft.isActive)
+                    .help("仅启用且打开此选项的人员会出现在工作台按人员视图中。")
                 Toggle("设为当前用户", isOn: Binding(
                     get: { appState.currentUserPersonID == draft.id },
                     set: { isCurrent in

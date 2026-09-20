@@ -18,9 +18,9 @@ swift build --product AItingjiCaptureSmoke
 swift build --product AItingjiLiveSmoke
 sh scripts/package_macos_app.sh
 tmp_check_dir="$(mktemp -d "/tmp/agendai-check.XXXXXX")"
-DMG_PATH="dist/AgendAI-v0.1.4-macOS-universal.dmg"
+DMG_PATH="dist/AgendAI-v0.1.8-macOS-universal.dmg"
 MOUNT_ROOT="$tmp_check_dir/mount"
-MOUNT_POINT="$MOUNT_ROOT/AgendAI 会小纪 0.1.4"
+MOUNT_POINT="$MOUNT_ROOT/AgendAI 会小纪 0.1.8"
 mkdir -p "$MOUNT_ROOT"
 attach_output="$(hdiutil attach -nobrowse -mountroot "$MOUNT_ROOT" "$DMG_PATH")"
 device="$(printf '%s\n' "$attach_output" | awk '$1 ~ /^\/dev\// && /Apple_HFS/ { print $1; exit }')"

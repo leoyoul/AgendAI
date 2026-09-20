@@ -26,6 +26,15 @@ private struct StandardMinutesGenerationFailure: LocalizedError, Sendable {
     }
 }
 
+struct WorkbenchMeetingParticipantSnapshot: Equatable, Sendable {
+    let meetingID: Meeting.ID
+    let personIDs: [VoiceprintPerson.ID]
+    let names: [String]
+    let unmatchedNames: [String]
+
+    var hasUnmatchedParticipants: Bool { !unmatchedNames.isEmpty }
+}
+
 enum RecordingStartupError: LocalizedError {
     case asrWarmup(String)
 
@@ -95,6 +104,9 @@ final class AppState {
     var noteImagesByMeeting: [Meeting.ID: [MeetingNoteImage]]
     var modelSources: [ModelSource]
     var people: [VoiceprintPerson]
+    var workbenchCalendarPeople: [VoiceprintPerson] {
+        people.filter { $0.isActive && $0.isCalendarVisible }
+    }
     var terminologyEntries: [TerminologyEntry]
     var voiceprintSamples: [VoiceprintSample]
     var diarizationRunsByMeeting: [Meeting.ID: [DiarizationRun]]
@@ -108,6 +120,9 @@ final class AppState {
     var meetingAgentWorkspacePath: String
     var zentaoConfiguration = ZentaoConfiguration()
     var meetingAgentMessagesByMeeting: [Meeting.ID: [MeetingAgentChatMessage]]
+    var workItems: [WorkItem]
+    var workItemFilter = WorkItemFilter()
+    var workbenchLaneMode: WorkbenchLaneMode = .people
     private(set) var meetingAgentContextUsageByMeeting: [Meeting.ID: MeetingAgentContextUsage] = [:]
     private(set) var meetingAgentSessionStatsByMeeting: [Meeting.ID: PiAgentSessionStats] = [:]
     private(set) var meetingAgentRespondingIDs: Set<Meeting.ID> = []
@@ -125,6 +140,9 @@ final class AppState {
     private(set) var followUpErrorsByMeeting: [Meeting.ID: String] = [:]
     private(set) var followUpDiagnosticsByMeeting: [Meeting.ID: ClaudeCodeDiagnostic] = [:]
     private(set) var followUpConfigurationSourcesByMeeting: [Meeting.ID: ClaudeCodeMCPConfigurationSource] = [:]
+    private(set) var zentaoMCPTestRunning = false
+    private(set) var zentaoMCPTestMessage = ""
+    private(set) var zentaoMCPTestDiagnostic: ClaudeCodeDiagnostic?
     private(set) var generatingMeetingAnalysisIDs: Set<Meeting.ID> = []
     @ObservationIgnored private var meetingAnalysisTasks: [Meeting.ID: Task<Void, Never>] = [:]
     var statusMessage = "正在加载本地数据。"
@@ -283,6 +301,370 @@ final class AppState {
         return meetingAnalysisArtifacts[selectedMeetingID]
     }
 
+    var filteredWorkItems: [WorkItem] {
+        let query = workItemFilter.query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return workItems
+            .filter { item in
+                let matchesQuery = query.isEmpty
+                    || item.title.localizedCaseInsensitiveContains(query)
+                    || item.detail.localizedCaseInsensitiveContains(query)
+                    || item.tags.contains { $0.localizedCaseInsensitiveContains(query) }
+                let matchesStatus = workItemFilter.statuses.isEmpty
+                    || workItemFilter.statuses.contains(item.status)
+                let matchesOwner = workItemFilter.ownerPersonIDs.isEmpty
+                    || !Set(item.ownerPersonIDs).isDisjoint(with: workItemFilter.ownerPersonIDs)
+                let matchesPriority = workItemFilter.priorities.isEmpty
+                    || workItemFilter.priorities.contains(item.priority)
+                let matchesStart = workItemFilter.startDate.map { filterStart in
+                    item.plannedEndDate.map { $0 >= WorkItemDate.normalized(filterStart) } ?? false
+                } ?? true
+                let matchesEnd = workItemFilter.endDate.map { filterEnd in
+                    item.plannedStartDate.map { $0 <= WorkItemDate.normalized(filterEnd) } ?? false
+                } ?? true
+                return matchesQuery && matchesStatus && matchesOwner && matchesPriority
+                    && matchesStart && matchesEnd
+            }
+            .sorted { lhs, rhs in
+                switch (lhs.plannedStartDate, rhs.plannedStartDate) {
+                case let (left?, right?) where left != right:
+                    return left < right
+                case (nil, nil):
+                    break
+                case (nil, _?):
+                    return false
+                case (_?, nil):
+                    return true
+                default:
+                    break
+                }
+                return lhs.updatedAt > rhs.updatedAt
+            }
+    }
+
+    /// 工作台日历只显示已经完成确认且具备完整排期信息的任务。
+    var calendarReadyWorkItems: [WorkItem] {
+        filteredWorkItems.filter { item in
+            item.isCalendarReady
+                && item.ownerPersonIDs.count == 1
+                && item.ownerPersonIDs.allSatisfy { ownerID in
+                    people.contains { $0.id == ownerID && $0.isActive }
+                }
+        }
+    }
+
+    /// 待办任务池只处理尚未完成确认的任务；已确认任务回到工作台日历跟踪。
+    var pendingConfirmationWorkItems: [WorkItem] {
+        let items = workItems.filter { $0.status == .pendingConfirmation }
+        return items.sorted { lhs, rhs in
+            let lhsHasSource = lhs.sourceMeetingID != nil
+            let rhsHasSource = rhs.sourceMeetingID != nil
+            if lhsHasSource != rhsHasSource { return lhsHasSource }
+
+            let lhsHasHints = !lhs.ownerNameHints.isEmpty || lhs.sourceDeadlineText != nil
+            let rhsHasHints = !rhs.ownerNameHints.isEmpty || rhs.sourceDeadlineText != nil
+            if lhsHasHints != rhsHasHints { return lhsHasHints }
+
+            if lhs.createdAt != rhs.createdAt { return lhs.createdAt < rhs.createdAt }
+            return lhs.updatedAt < rhs.updatedAt
+        }
+    }
+
+    /// 工作台用于显示会议卡片的参会人快照。优先采用正式纪要，其次采用已识别转写人员。
+    var workbenchMeetingParticipants: [Meeting.ID: WorkbenchMeetingParticipantSnapshot] {
+        Dictionary(uniqueKeysWithValues: meetings.map { meeting in
+            (meeting.id, workbenchMeetingParticipants(for: meeting))
+        })
+    }
+
+    func workbenchMeetingParticipants(for meeting: Meeting) -> WorkbenchMeetingParticipantSnapshot {
+        let formalNames: [String] = {
+            guard let document = meetingMinutesArtifacts[meeting.id]?.document else { return [] }
+            let detailed = document.participantDetails?.map(\.name) ?? []
+            return detailed.isEmpty ? document.participants : detailed
+        }()
+        let rawNames: [String]
+        if !formalNames.isEmpty {
+            rawNames = formalNames
+        } else {
+            rawNames = segmentsByMeeting[meeting.id, default: []].compactMap { segment in
+                if let personID = segment.personID,
+                   let person = people.first(where: { $0.id == personID }) {
+                    return person.displayName
+                }
+                if let rawName = segment.personName {
+                    let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return name.isEmpty ? nil : name
+                }
+                return nil
+            }
+        }
+
+        var personIDs: [VoiceprintPerson.ID] = []
+        var names: [String] = []
+        var unmatchedNames: [String] = []
+        for rawName in Self.unique(rawNames) {
+            if let person = people.first(where: { person in
+                ([person.displayName] + person.aliases).contains {
+                    Self.normalizedWorkItemText($0) == Self.normalizedWorkItemText(rawName)
+                }
+            }) {
+                if !personIDs.contains(person.id) { personIDs.append(person.id) }
+                if !names.contains(person.displayName) { names.append(person.displayName) }
+            } else {
+                if !names.contains(rawName) { names.append(rawName) }
+                if !unmatchedNames.contains(rawName) { unmatchedNames.append(rawName) }
+            }
+        }
+        return WorkbenchMeetingParticipantSnapshot(
+            meetingID: meeting.id,
+            personIDs: personIDs,
+            names: names,
+            unmatchedNames: unmatchedNames
+        )
+    }
+
+    var currentQuarterWorkItems: [WorkItem] {
+        let interval = MeetingCalendar.quarterInterval(containing: Date())
+        return calendarReadyWorkItems.filter { item in
+            guard let start = item.plannedStartDate ?? item.plannedEndDate,
+                  let end = item.plannedEndDate ?? item.plannedStartDate else { return false }
+            return WorkItemDate.normalized(start) < interval.end
+                && WorkItemDate.normalized(end) >= interval.start
+        }
+    }
+
+    func workItems(on date: Date, calendar: Calendar = .current) -> [WorkItem] {
+        let day = WorkItemDate.normalized(date, calendar: calendar)
+        return calendarReadyWorkItems.filter { item in
+            let start = WorkItemDate.normalized(item.plannedStartDate ?? item.plannedEndDate ?? day, calendar: calendar)
+            let end = WorkItemDate.normalized(item.plannedEndDate ?? item.plannedStartDate ?? day, calendar: calendar)
+            return start <= day && day <= end
+        }
+    }
+
+    var currentWeekWorkItems: [WorkItem] {
+        let calendar = Calendar.current
+        guard let interval = calendar.dateInterval(of: .weekOfYear, for: Date()) else {
+            return calendarReadyWorkItems
+        }
+        let firstDay = WorkItemDate.normalized(interval.start, calendar: calendar)
+        let lastDay = WorkItemDate.normalized(
+            calendar.date(byAdding: .day, value: -1, to: interval.end) ?? interval.end,
+            calendar: calendar
+        )
+        return calendarReadyWorkItems.filter { item in
+            guard let start = item.plannedStartDate ?? item.plannedEndDate,
+                  let end = item.plannedEndDate ?? item.plannedStartDate else {
+                return false
+            }
+            return WorkItemDate.normalized(start, calendar: calendar) <= lastDay
+                && WorkItemDate.normalized(end, calendar: calendar) >= firstDay
+        }
+    }
+
+    @discardableResult
+    func createManualWorkItem(title: String = "新任务") -> WorkItem.ID? {
+        guard ensurePersistenceAvailable(action: "新建任务") else { return nil }
+        guard let currentUserPersonID,
+              people.contains(where: { $0.id == currentUserPersonID && $0.isActive }) else {
+            statusMessage = "请先在人员设置中选择当前用户，手动任务必须有唯一负责人。"
+            return nil
+        }
+        let now = Date()
+        let item = WorkItem(
+            title: title,
+            ownerPersonIDs: [currentUserPersonID],
+            status: .pendingConfirmation,
+            source: .manual,
+            createdAt: now,
+            updatedAt: now
+        )
+        guard let store else {
+            statusMessage = "本地数据库不可用，不能新建任务。"
+            return nil
+        }
+        do {
+            try store.createWorkItem(item)
+            workItems.append(item)
+            statusMessage = "已创建待确认任务，请在待办任务池中补充截止日期。"
+            return item.id
+        } catch {
+            statusMessage = "任务保存失败：\(error.localizedDescription)"
+            return nil
+        }
+    }
+
+    @discardableResult
+    func updateWorkItem(_ item: WorkItem) -> Bool {
+        guard ensurePersistenceAvailable(action: "编辑任务") else { return false }
+        guard let store else {
+            statusMessage = "本地数据库不可用，不能编辑任务。"
+            return false
+        }
+        guard let index = workItems.firstIndex(where: { $0.id == item.id }) else {
+            statusMessage = "找不到工作项。"
+            return false
+        }
+        var updated = item
+        updated.title = updated.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !updated.title.isEmpty else {
+            statusMessage = "任务标题不能为空。"
+            return false
+        }
+        updated.ownerPersonIDs = Self.unique(updated.ownerPersonIDs)
+        guard updated.ownerPersonIDs.allSatisfy({ ownerID in
+            people.contains(where: { person in person.id == ownerID && person.isActive })
+        }) else {
+            statusMessage = "负责人必须来自人员库。"
+            return false
+        }
+        guard updated.ownerPersonIDs.count <= 1 else {
+            statusMessage = "每个工作项只能有一个负责人，请先选择唯一负责人。"
+            return false
+        }
+        if updated.status != .pendingConfirmation && updated.ownerPersonIDs.count != 1 {
+            statusMessage = "待开始、进行中、已完成和已取消的任务必须有且仅有一个负责人。"
+            return false
+        }
+        let previous = workItems[index]
+        let now = Date()
+        updated.plannedStartDate = updated.plannedStartDate.map { WorkItemDate.normalized($0) }
+        updated.plannedEndDate = updated.plannedEndDate.map { WorkItemDate.normalized($0) }
+        if updated.status != .pendingConfirmation,
+           updated.plannedStartDate == nil,
+           let endDate = updated.plannedEndDate {
+            let meetingDate = updated.sourceMeetingID
+                .flatMap { meetingID in meetings.first(where: { $0.id == meetingID }) }
+                .map(workItemMeetingDate(for:))
+            updated.plannedStartDate = meetingDate ?? endDate
+        }
+        if let start = updated.plannedStartDate, let end = updated.plannedEndDate, end < start {
+            statusMessage = "计划结束日期不能早于计划开始日期。"
+            return false
+        }
+        if updated.status != .pendingConfirmation, updated.plannedEndDate == nil {
+            statusMessage = "任务必须设置截止日期后才能进入工作台。"
+            return false
+        }
+        if updated.status == .completed, previous.status != .completed {
+            updated.completedAt = now
+        } else if updated.status != .completed {
+            updated.completedAt = nil
+        }
+        updated.tags = Self.unique(updated.tags.map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.filter { !$0.isEmpty })
+        updated.updatedAt = now
+        do {
+            try store.updateWorkItem(updated)
+            workItems[index] = updated
+            statusMessage = "任务已保存。"
+            return true
+        } catch {
+            statusMessage = "任务保存失败：\(error.localizedDescription)"
+            return false
+        }
+    }
+
+    @discardableResult
+    func setWorkItemStatus(_ itemID: WorkItem.ID, status: WorkItemStatus, completionNote: String? = nil) -> Bool {
+        guard var item = workItems.first(where: { $0.id == itemID }) else {
+            statusMessage = "找不到工作项。"
+            return false
+        }
+        if let completionNote {
+            item.completionNote = completionNote
+        }
+        item.status = status
+        return updateWorkItem(item)
+    }
+
+    @discardableResult
+    func confirmWorkItem(_ itemID: WorkItem.ID) -> Bool {
+        guard var item = workItems.first(where: { $0.id == itemID }) else {
+            statusMessage = "找不到工作项。"
+            return false
+        }
+        guard item.ownerPersonIDs.count == 1,
+              let ownerID = item.ownerPersonIDs.first,
+              people.contains(where: { $0.id == ownerID && $0.isActive }) else {
+            statusMessage = "请选择一名人员库中的唯一负责人后再确认任务。"
+            return false
+        }
+        guard let endDate = item.plannedEndDate else {
+            statusMessage = "请设置截止日期后再确认任务。"
+            return false
+        }
+        if item.plannedStartDate == nil {
+            let meetingDate = item.sourceMeetingID
+                .flatMap { meetingID in meetings.first(where: { $0.id == meetingID }) }
+                .map(workItemMeetingDate(for:))
+            item.plannedStartDate = meetingDate ?? WorkItemDate.normalized(endDate)
+        }
+        guard let startDate = item.plannedStartDate, startDate <= endDate else {
+            statusMessage = "计划结束日期不能早于计划开始日期。"
+            return false
+        }
+        item.status = .notStarted
+        return updateWorkItem(item)
+    }
+
+    func setWorkbenchLaneMode(_ mode: WorkbenchLaneMode) {
+        guard workbenchLaneMode != mode else { return }
+        workbenchLaneMode = mode
+        persistAppSetting(AppSettingKey.workbenchLaneMode, value: mode.rawValue)
+    }
+
+    @discardableResult
+    func openWorkItemSourceMeeting(_ itemID: WorkItem.ID) -> Bool {
+        guard let meetingID = workItems.first(where: { $0.id == itemID })?.sourceMeetingID else {
+            statusMessage = "该任务没有关联来源会议。"
+            return false
+        }
+        return selectMeeting(meetingID)
+    }
+
+    @discardableResult
+    func deleteWorkItem(_ itemID: WorkItem.ID) -> Bool {
+        guard ensurePersistenceAvailable(action: "删除任务") else { return false }
+        guard let store, let index = workItems.firstIndex(where: { $0.id == itemID }) else { return false }
+        do {
+            try store.deleteWorkItem(id: itemID)
+            workItems.remove(at: index)
+            statusMessage = "任务已删除。"
+            return true
+        } catch {
+            statusMessage = "任务删除失败：\(error.localizedDescription)"
+            return false
+        }
+    }
+
+    @discardableResult
+    func deleteWorkItems(_ itemIDs: [WorkItem.ID]) -> Bool {
+        guard ensurePersistenceAvailable(action: "批量删除任务") else { return false }
+        var uniqueIDs: [WorkItem.ID] = []
+        for itemID in itemIDs where !itemID.isEmpty {
+            if !uniqueIDs.contains(itemID) {
+                uniqueIDs.append(itemID)
+            }
+        }
+        guard !uniqueIDs.isEmpty else { return true }
+        guard let store else {
+            statusMessage = "本地数据库不可用，不能删除任务。"
+            return false
+        }
+        do {
+            try store.deleteWorkItems(ids: uniqueIDs)
+            let deletedIDs = Set(uniqueIDs)
+            workItems.removeAll { deletedIDs.contains($0.id) }
+            statusMessage = "已删除 \(uniqueIDs.count) 项任务。"
+            return true
+        } catch {
+            statusMessage = "批量删除任务失败：\(error.localizedDescription)"
+            return false
+        }
+    }
+
     var isGeneratingSelectedMeetingMinutes: Bool {
         guard let selectedMeetingID else { return false }
         return generatingMeetingMinutesIDs.contains(selectedMeetingID)
@@ -358,6 +740,8 @@ final class AppState {
                 diarizationRunsByMeeting = snapshot.diarizationRunsByMeeting
                 diarizationMappingsByMeeting = snapshot.diarizationMappingsByMeeting
                 meetingAgentMessagesByMeeting = snapshot.meetingAgentMessagesByMeeting
+                workItems = snapshot.workItems
+                workbenchLaneMode = WorkbenchLaneMode(rawValue: snapshot.appSettings[AppSettingKey.workbenchLaneMode] ?? "") ?? .people
                 modelSources = snapshot.modelSources
                 diarizationSpeakerPreset = DiarizationSpeakerPreset.parse(
                     snapshot.appSettings[AppSettingKey.diarizationSpeakerPreset]
@@ -399,6 +783,8 @@ final class AppState {
                 diarizationRunsByMeeting = snapshot.diarizationRunsByMeeting
                 diarizationMappingsByMeeting = snapshot.diarizationMappingsByMeeting
                 meetingAgentMessagesByMeeting = snapshot.meetingAgentMessagesByMeeting
+                workItems = snapshot.workItems
+                workbenchLaneMode = WorkbenchLaneMode(rawValue: snapshot.appSettings[AppSettingKey.workbenchLaneMode] ?? "") ?? .people
                 modelSources = snapshot.modelSources
                 diarizationSpeakerPreset = DiarizationSpeakerPreset.parse(
                     snapshot.appSettings[AppSettingKey.diarizationSpeakerPreset]
@@ -441,6 +827,8 @@ final class AppState {
             diarizationRunsByMeeting = defaults.diarizationRunsByMeeting
             diarizationMappingsByMeeting = defaults.diarizationMappingsByMeeting
             meetingAgentMessagesByMeeting = defaults.meetingAgentMessagesByMeeting
+            workItems = defaults.workItems
+            workbenchLaneMode = .people
             modelSources = defaults.modelSources
             diarizationSpeakerPreset = DiarizationSpeakerPreset.parse(
                 defaults.appSettings[AppSettingKey.diarizationSpeakerPreset]
@@ -491,6 +879,7 @@ final class AppState {
         refreshExportPreview()
         restoreMeetingMinutesArtifacts()
         restoreMeetingAnalysisArtifacts()
+        restoreWorkItemsIfNeeded()
         restoreFollowUps()
         refreshDebugLogPage()
         appendDebugLog(category: "应用", message: "应用启动，已加载 \(meetings.count) 场会议。")
@@ -517,17 +906,61 @@ final class AppState {
         matchFollowUps(meetingID: meetingID)
     }
 
+    func testZentaoMCP() {
+        guard zentaoConfiguration.enabled else {
+            zentaoMCPTestMessage = "请先启用禅道 MCP。"
+            return
+        }
+        guard !zentaoMCPTestRunning else { return }
+        let selection: ClaudeCodeMCPConfigurationSelection
+        do {
+            selection = try makeZentaoMCPConfigSelection()
+        } catch {
+            zentaoMCPTestDiagnostic = diagnostic(for: error, source: nil, phase: "configuration")
+            zentaoMCPTestMessage = error.localizedDescription
+            return
+        }
+        let mcpConfigURL = selection.configURL
+        let runID = UUID().uuidString
+        let runtime = PiAgentRuntimeConfiguration(
+            workingDirectoryURL: FileManager.default.temporaryDirectory.appendingPathComponent("tinglan-zentao-probe-\(runID)", isDirectory: true),
+            sessionDirectoryURL: Self.meetingAgentSessionRootURL.appendingPathComponent("ZentaoProbe", isDirectory: true).appendingPathComponent(runID, isDirectory: true),
+            sessionName: "禅道 MCP 权限测试"
+        )
+        zentaoMCPTestRunning = true
+        zentaoMCPTestMessage = "测试中…"
+        zentaoMCPTestDiagnostic = nil
+        Task { [weak self] in
+            guard let self else { return }
+            defer {
+                self.zentaoMCPTestRunning = false
+                if let mcpConfigURL { try? FileManager.default.removeItem(at: mcpConfigURL) }
+                try? FileManager.default.removeItem(at: runtime.workingDirectoryURL)
+            }
+            do {
+                let result = try await self.zentaoMCPClient.probe(runtime: runtime, mcpConfigURL: mcpConfigURL)
+                self.zentaoMCPTestMessage = result.message
+                self.appendDebugLog(category: "禅道", message: "MCP 只读权限测试成功。")
+            } catch {
+                self.zentaoMCPTestMessage = error.localizedDescription
+                self.zentaoMCPTestDiagnostic = self.diagnostic(for: error, source: selection.source, phase: "probe")
+                self.appendDebugLog(category: "禅道", message: "MCP 只读权限测试失败：\(error.localizedDescription)")
+            }
+        }
+    }
+
     func handoffFollowUp(_ todo: ZentaoFollowUpTodo) {
         guard let meeting = meetings.first(where: { $0.id == todo.meetingID }) else {
             statusMessage = "找不到对应会议。"
             return
         }
-        guard todo.status != .handedOff, !todo.title.isEmpty,
+        guard todo.status == .matched, !todo.title.isEmpty,
               todo.projectName != "待确认", todo.executionName != "待确认",
               todo.ownerName != "待确认", !todo.plannedStart.isEmpty,
               todo.plannedStart != "待确认", !todo.plannedEnd.isEmpty,
-              todo.plannedEnd != "待确认" else {
-            statusMessage = "任务名称、项目、执行、负责人和计划起止时间必须先完成匹配。"
+              todo.plannedEnd != "待确认", nonEmpty(todo.projectID),
+              nonEmpty(todo.executionID), nonEmpty(todo.ownerID) else {
+            statusMessage = "任务必须完成项目、执行、负责人和计划起止时间匹配后才能交接。"
             return
         }
         let runtime = meetingAgentRuntimeConfiguration(meeting: meeting)
@@ -551,6 +984,7 @@ final class AppState {
             } catch {
                 self.statusMessage = "禅道交接失败：\(error.localizedDescription)"
                 self.followUpDiagnosticsByMeeting[meeting.id] = self.diagnostic(for: error, source: selection.source, phase: "handoff")
+                self.appendDebugLog(category: "禅道", message: "会后待办交接失败：\(error.localizedDescription)", meetingID: meeting.id)
             }
         }
     }
@@ -594,10 +1028,18 @@ final class AppState {
                 self.followUpsByMeeting[meetingID] = result.todos
                 self.followUpDiagnosticsByMeeting[meetingID] = nil
                 self.persistFollowUps()
+                if !result.normalizationWarnings.isEmpty {
+                    self.appendDebugLog(
+                        category: "禅道",
+                        message: "会后待办响应已完成有限归一化：\(result.normalizationWarnings.joined(separator: "；"))",
+                        meetingID: meetingID
+                    )
+                }
                 self.statusMessage = "会后待办已根据禅道数据重新生成。"
             } catch {
                 self.followUpErrorsByMeeting[meetingID] = error.localizedDescription
                 self.followUpDiagnosticsByMeeting[meetingID] = self.diagnostic(for: error, source: selection.source, phase: "matching")
+                self.appendDebugLog(category: "禅道", message: "会后待办匹配失败：\(error.localizedDescription)", meetingID: meetingID)
                 self.statusMessage = "会后待办匹配失败，可稍后重新生成：\(error.localizedDescription)"
             }
         }
@@ -701,6 +1143,8 @@ final class AppState {
         var diagnostic: ClaudeCodeDiagnostic
         if let error = error as? ClaudeCodeClientError {
             diagnostic = error.diagnostic
+        } else if let error = error as? ZentaoMCPError {
+            diagnostic = error.diagnostic
         } else {
             diagnostic = ClaudeCodeDiagnostic(phase: phase, summary: error.localizedDescription)
         }
@@ -711,6 +1155,11 @@ final class AppState {
         diagnostic.configurationSource = source
         diagnostic.mcpName = "zentao"
         return diagnostic
+    }
+
+    private func nonEmpty(_ value: String?) -> Bool {
+        guard let value else { return false }
+        return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     @discardableResult
@@ -971,6 +1420,7 @@ final class AppState {
         }
         do {
             try store.deleteMeeting(id: meetingID)
+            try store.detachWorkItemsFromMeeting(meetingID: meetingID)
             let audioDeletionError = deleteMeetingAudioDirectory(for: meeting)
             meetings.removeAll { $0.id == meetingID }
             segmentsByMeeting.removeValue(forKey: meetingID)
@@ -986,6 +1436,7 @@ final class AppState {
             meetingMinutesArtifacts.removeValue(forKey: meetingID)
             meetingAnalysisArtifacts.removeValue(forKey: meetingID)
             generatingMeetingAnalysisIDs.remove(meetingID)
+            workItems = (try? store.loadWorkItems()) ?? workItems.filter { $0.sourceMeetingID != meetingID }
             recentlyCompletedMeetingIDs.remove(meetingID)
             if selectedMeetingID == meetingID {
                 selectedMeetingID = nil
@@ -2138,6 +2589,275 @@ final class AppState {
         }
     }
 
+    private func restoreWorkItemsIfNeeded() {
+        guard let store else { return }
+        var candidates: [WorkItemImportCandidate] = []
+        for meeting in meetings {
+            candidates.append(contentsOf: workItemCandidates(for: meeting))
+            if let todos = try? store.loadMeetingTodos(meetingID: meeting.id) {
+                candidates.append(contentsOf: todos.map { workItemCandidate(from: $0, meeting: meeting) })
+            }
+        }
+        do {
+            try store.mergeGeneratedWorkItems(candidates)
+            workItems = try store.loadWorkItems()
+            normalizeWorkItemReadinessIfNeeded()
+        } catch {
+            statusMessage = "工作台任务恢复失败：\(error.localizedDescription)"
+        }
+    }
+
+    private func syncWorkItems(for meetingID: Meeting.ID) {
+        guard let meeting = meetings.first(where: { $0.id == meetingID }), let store else { return }
+        var candidates = workItemCandidates(for: meeting)
+        if let todos = try? store.loadMeetingTodos(meetingID: meetingID) {
+            candidates.append(contentsOf: todos.map { workItemCandidate(from: $0, meeting: meeting) })
+        }
+        do {
+            try store.mergeGeneratedWorkItems(candidates)
+            workItems = try store.loadWorkItems()
+            normalizeWorkItemReadinessIfNeeded()
+        } catch {
+            statusMessage = "工作台任务同步失败：\(error.localizedDescription)"
+        }
+    }
+
+    private func workItemCandidates(for meeting: Meeting) -> [WorkItemImportCandidate] {
+        var candidates: [WorkItemImportCandidate] = []
+        if let minutes = meetingMinutesArtifacts[meeting.id]?.document {
+            candidates.append(contentsOf: minutes.actions.enumerated().map { index, action in
+                workItemCandidate(from: action, index: index, meeting: meeting)
+            })
+        }
+        if let analysis = meetingAnalysisArtifacts[meeting.id]?.document {
+            candidates.append(contentsOf: analysis.todos.map { workItemCandidate(from: $0, meeting: meeting) })
+        }
+        return candidates
+    }
+
+    private func workItemCandidate(
+        from action: MeetingMinutesAction,
+        index: Int,
+        meeting: Meeting
+    ) -> WorkItemImportCandidate {
+        let owners = resolveSingleWorkItemOwner(action.owners)
+        let deadline = action.deadline.trimmingCharacters(in: .whitespacesAndNewlines)
+        let meetingDate = workItemMeetingDate(for: meeting)
+        let endDate = WorkItemDateParser.parse(deadline, referenceDate: meetingDate)
+            ?? WorkItemDate.addingDays(meetingDate, 7)
+        let detail = action.dependencies?.filter { !$0.isEmpty }.joined(separator: "；") ?? ""
+        let fingerprint = [action.action, action.owners.joined(separator: "、"), deadline, action.deliverable ?? ""]
+            .joined(separator: "|")
+        let sourceKey = "minutes:\(meeting.id):\(Self.sha256(Data(fingerprint.utf8)))"
+        let item = WorkItem(
+            title: action.action,
+            detail: detail,
+            deliverable: action.deliverable ?? "",
+            acceptanceCriteria: action.acceptanceCriteria ?? "",
+            ownerPersonIDs: owners.ids,
+            ownerNameHints: owners.hints,
+            sourceDeadlineText: deadline.isEmpty ? nil : deadline,
+            plannedStartDate: meetingDate,
+            plannedEndDate: endDate,
+            status: .pendingConfirmation,
+            sourceMeetingID: meeting.id,
+            sourceMeetingTitle: meeting.title,
+            source: .meetingMinutes,
+            createdAt: meeting.createdAt
+        )
+        let origin = WorkItemOrigin(
+            workItemID: item.id,
+            source: .meetingMinutes,
+            sourceKey: sourceKey,
+            meetingID: meeting.id,
+            meetingTitle: meeting.title,
+            rawTitle: action.action,
+            rawOwnerNames: action.owners,
+            rawDeadline: deadline.isEmpty ? nil : deadline,
+            createdAt: meeting.createdAt
+        )
+        return WorkItemImportCandidate(item: item, origin: origin)
+    }
+
+    private func workItemCandidate(
+        from todo: MeetingAnalysisTodo,
+        meeting: Meeting
+    ) -> WorkItemImportCandidate {
+        let ownerNames = todo.owner == "待确认" ? [] : [todo.owner]
+        let owners = resolveSingleWorkItemOwner(ownerNames)
+        let deadline = todo.deadline.trimmingCharacters(in: .whitespacesAndNewlines)
+        let meetingDate = workItemMeetingDate(for: meeting)
+        let endDate = WorkItemDateParser.parse(deadline, referenceDate: meetingDate)
+            ?? WorkItemDate.addingDays(meetingDate, 7)
+        let item = WorkItem(
+            title: todo.item,
+            detail: todo.task,
+            deliverable: todo.deliverable,
+            acceptanceCriteria: todo.assignmentBasis,
+            ownerPersonIDs: owners.ids,
+            ownerNameHints: owners.hints,
+            sourceDeadlineText: deadline.isEmpty || deadline == "待确认" ? nil : deadline,
+            plannedStartDate: meetingDate,
+            plannedEndDate: endDate,
+            status: .pendingConfirmation,
+            sourceMeetingID: meeting.id,
+            sourceMeetingTitle: meeting.title,
+            source: .meetingAnalysis,
+            createdAt: meeting.createdAt
+        )
+        let origin = WorkItemOrigin(
+            workItemID: item.id,
+            source: .meetingAnalysis,
+            sourceKey: "analysis:\(meeting.id):\(todo.id)",
+            meetingID: meeting.id,
+            meetingTitle: meeting.title,
+            rawTitle: todo.item,
+            rawOwnerNames: ownerNames,
+            rawDeadline: deadline.isEmpty ? nil : deadline,
+            createdAt: meeting.createdAt
+        )
+        return WorkItemImportCandidate(item: item, origin: origin)
+    }
+
+    private func workItemCandidate(from todo: MeetingTodo, meeting: Meeting) -> WorkItemImportCandidate {
+        let ownerNames: [String]
+        if let owner = todo.owner, owner != "待确认" {
+            ownerNames = [owner]
+        } else {
+            ownerNames = []
+        }
+        let owners = resolveSingleWorkItemOwner(ownerNames)
+        let deadline = todo.deadline?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let meetingDate = workItemMeetingDate(for: meeting)
+        let endDate = WorkItemDateParser.parse(deadline, referenceDate: meetingDate)
+            ?? WorkItemDate.addingDays(meetingDate, 7)
+        let item = WorkItem(
+            title: todo.title,
+            detail: todo.detail,
+            deliverable: todo.deliverable ?? "",
+            acceptanceCriteria: todo.acceptanceCriteria ?? "",
+            ownerPersonIDs: owners.ids,
+            ownerNameHints: owners.hints,
+            sourceDeadlineText: deadline.isEmpty ? nil : deadline,
+            plannedStartDate: meetingDate,
+            plannedEndDate: endDate,
+            status: .pendingConfirmation,
+            sourceMeetingID: meeting.id,
+            sourceMeetingTitle: meeting.title,
+            source: .meetingAgent,
+            createdAt: todo.createdAt
+        )
+        let origin = WorkItemOrigin(
+            workItemID: item.id,
+            source: .meetingAgent,
+            sourceKey: "agent:\(todo.jobID):\(todo.todoID)",
+            meetingID: meeting.id,
+            meetingTitle: meeting.title,
+            jobID: todo.jobID,
+            todoID: todo.todoID,
+            rawTitle: todo.title,
+            rawOwnerNames: ownerNames,
+            rawDeadline: deadline.isEmpty ? nil : deadline,
+            evidence: todo.evidence,
+            createdAt: todo.createdAt
+        )
+        return WorkItemImportCandidate(item: item, origin: origin)
+    }
+
+    private func workItemMeetingDate(for meeting: Meeting) -> Date {
+        WorkItemDate.normalized(meeting.startedAt ?? meeting.createdAt)
+    }
+
+    /// 负责人姓名统一按人员库解析：标准姓名优先，其次是称呼别名和带称谓的写法；
+    /// 人员库确实没有对应人员时保留原始姓名，交给待办任务池人工指派。
+    private func resolveWorkItemOwners(_ names: [String]) -> (ids: [String], hints: [String]) {
+        let resolver = PersonNameResolver(people: people)
+        var ids: [String] = []
+        var hints: [String] = []
+        for rawName in names {
+            let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty, name != "待确认" else { continue }
+            if let person = resolver.resolve(name) {
+                if !ids.contains(person.id) { ids.append(person.id) }
+            } else if !hints.contains(name) {
+                hints.append(name)
+            }
+        }
+        return (ids, hints)
+    }
+
+    private func resolveSingleWorkItemOwner(_ names: [String]) -> (ids: [String], hints: [String]) {
+        let cleanedNames = Self.unique(names.compactMap { rawName in
+            let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+            return name.isEmpty || name == "待确认" ? nil : name
+        })
+        let resolved = resolveWorkItemOwners(cleanedNames)
+        guard cleanedNames.count == 1, resolved.ids.count + resolved.hints.count == 1 else {
+            return ([], cleanedNames)
+        }
+        return resolved
+    }
+
+    private func normalizeWorkItemReadinessIfNeeded() {
+        guard let store else { return }
+        for index in workItems.indices {
+            var item = workItems[index]
+            var changed = false
+            let ownerIDs = Self.unique(item.ownerPersonIDs)
+            let validOwnerIDs = ownerIDs.filter { ownerID in
+                people.contains { $0.id == ownerID && $0.isActive }
+            }
+
+            if ownerIDs.count != 1 || validOwnerIDs.count != 1 {
+                let names = ownerIDs.compactMap { id in
+                    people.first(where: { $0.id == id })?.displayName
+                }
+                item.ownerNameHints = Self.unique(item.ownerNameHints + names)
+                item.ownerPersonIDs = []
+                changed = item.ownerPersonIDs != workItems[index].ownerPersonIDs
+                    || item.ownerNameHints != workItems[index].ownerNameHints
+            } else if item.ownerPersonIDs != validOwnerIDs {
+                item.ownerPersonIDs = validOwnerIDs
+                changed = true
+            }
+
+            if item.plannedEndDate == nil, let startDate = item.plannedStartDate {
+                item.plannedEndDate = WorkItemDate.addingDays(startDate, 7)
+                changed = true
+            }
+
+            let hasValidDates: Bool = {
+                guard let end = item.plannedEndDate else { return false }
+                let start = item.plannedStartDate ?? end
+                return WorkItemDate.normalized(start) <= WorkItemDate.normalized(end)
+            }()
+            if item.status != .completed,
+               item.status != .cancelled,
+               (!hasValidDates || item.ownerPersonIDs.count != 1),
+               item.status != .pendingConfirmation {
+                item.status = .pendingConfirmation
+                changed = true
+            }
+
+            guard changed else { continue }
+            item.updatedAt = Date()
+            if (try? store.updateWorkItem(item)) != nil {
+                workItems[index] = item
+            }
+        }
+    }
+
+    private static func unique(_ values: [String]) -> [String] {
+        var seen = Set<String>()
+        return values.filter { seen.insert($0).inserted }
+    }
+
+    private static func normalizedWorkItemText(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\\s+", with: "", options: .regularExpression)
+            .lowercased()
+    }
+
     func generateSelectedMeetingMinutes(additionalPrompt: String = "") {
         guard let meeting = selectedMeeting else {
             statusMessage = "请先选择会议。"
@@ -2215,6 +2935,7 @@ final class AppState {
                 }
                 self.meetingMinutesArtifacts[meetingID] = artifact
                 self.matchFollowUps(meetingID: meetingID)
+                self.syncWorkItems(for: meetingID)
                 self.persistMeetingNoteVisionResults(artifact.noteVisionResults)
                 self.persistMeetingNoteVisionFailures(artifact.noteVisionFailures)
                 _ = self.setPostprocessRecoveryPending(false, meetingID: meetingID)
@@ -2342,6 +3063,7 @@ final class AppState {
                     prompt: self.meetingAnalysisPrompt
                 )
                 self.meetingAnalysisArtifacts[meetingID] = artifact
+                self.syncWorkItems(for: meetingID)
                 self.statusMessage = "AI 分析会议纪要已生成，任务分工已按人员职责整理。"
             } catch is CancellationError {
                 self.statusMessage = "AI 分析会议纪要生成已取消。"
@@ -4426,7 +5148,7 @@ final class AppState {
                     meeting: meeting,
                     segments: segments,
                     source: source,
-                    vocabulary: .empty,
+                    vocabulary: meetingMinutesVocabulary,
                     prompt: prompt,
                     additionalPrompt: additionalPrompt,
                     notes: notes
@@ -4645,7 +5367,7 @@ final class AppState {
         )
         do {
             try store.upsertPerson(person)
-            people.insert(person, at: 0)
+            people.append(person)
             libraryStatusMessage = "已新增人员。"
             return person.id
         } catch {
@@ -4701,11 +5423,12 @@ final class AppState {
             if let index = people.firstIndex(where: { $0.id == person.id }) {
                 people[index] = person
             } else {
-                people.insert(person, at: 0)
+                people.append(person)
             }
             if currentUserPersonID == person.id, !person.isActive {
                 _ = setCurrentUserPerson(nil)
             }
+            normalizeWorkItemReadinessIfNeeded()
             libraryStatusMessage = "人员“\(person.displayName)”已保存。"
             return true
         } catch {
@@ -4752,6 +5475,7 @@ final class AppState {
                 currentUserPersonID = nil
                 try? store.setAppSetting(AppSettingKey.currentUserPersonID, value: "")
             }
+            normalizeWorkItemReadinessIfNeeded()
             libraryStatusMessage = "人员已删除。"
             return true
         } catch {
@@ -4948,7 +5672,7 @@ final class AppState {
             return existingPerson
         }
         let person = VoiceprintPerson(id: UUID().uuidString, displayName: displayName)
-        people.insert(person, at: 0)
+        people.append(person)
         persistPerson(person)
         return person
     }
@@ -5649,6 +6373,7 @@ final class AppState {
                 AppSettingKey.meetingMinutesModelSeeded: "false",
                 AppSettingKey.difyKnowledgeBaseConfiguration: "",
                 AppSettingKey.currentUserPersonID: "",
+                AppSettingKey.workbenchLaneMode: WorkbenchLaneMode.people.rawValue,
                 AppSettingKey.meetingAgentWorkspacePath: ""
             ]
         )
