@@ -37,8 +37,8 @@ lipo -create \
     "$ROOT_DIR/.build/x86_64-apple-macosx/release/AItingjiApp" \
     -output "$MACOS_DIR/$APP_NAME"
 cp "$ROOT_DIR/Packaging/AItingjiTestApp-Info.plist" "$CONTENTS_DIR/Info.plist"
-    plutil -replace CFBundleShortVersionString -string "${AGEND_AI_TEST_APP_VERSION:-0.1.8}" "$CONTENTS_DIR/Info.plist"
-    plutil -replace CFBundleVersion -string "${AGEND_AI_TEST_APP_BUILD:-18}" "$CONTENTS_DIR/Info.plist"
+    plutil -replace CFBundleShortVersionString -string "${AGEND_AI_TEST_APP_VERSION:-0.1.9}" "$CONTENTS_DIR/Info.plist"
+    plutil -replace CFBundleVersion -string "${AGEND_AI_TEST_APP_BUILD:-19}" "$CONTENTS_DIR/Info.plist"
 SPARKLE_PUBLIC_KEY="$(plutil -extract SUPublicEDKey raw -o - "$CONTENTS_DIR/Info.plist" 2>/dev/null || true)"
 case "$SPARKLE_PUBLIC_KEY" in
     ""|__SPARKLE_PUBLIC_KEY__|*" "*|*"	"*)

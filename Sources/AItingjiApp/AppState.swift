@@ -4784,7 +4784,14 @@ final class AppState {
             },
             onLevel: { [weak self] level in
                 Task { @MainActor in
-                    self?.inputLevel = Double(level)
+                    guard let self else {
+                        return
+                    }
+                    guard level.isFinite else {
+                        self.inputLevel = 0
+                        return
+                    }
+                    self.inputLevel = min(max(Double(level), 0), 1)
                 }
             },
             onError: { [weak self] error in

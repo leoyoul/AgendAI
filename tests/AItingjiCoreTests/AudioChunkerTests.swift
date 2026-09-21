@@ -24,3 +24,12 @@ func audioChunkerCalculatesPeakLevel() {
     #expect(chunker.peakLevel(samples: [-0.2, 0.4, -0.8]) == 0.8)
     #expect(chunker.peakLevel(samples: []) == 0)
 }
+
+@Test
+func audioChunkerClampsAndIgnoresInvalidPeakLevels() {
+    let chunker = AudioChunker(format: AudioFormatDescription(sampleRate: 16_000, channels: 1))
+
+    #expect(chunker.peakLevel(samples: [0.2, 2, -1.5]) == 1)
+    #expect(chunker.peakLevel(samples: [Float.nan, .infinity, -.infinity]) == 0)
+    #expect(chunker.peakLevel(samples: [Float.nan, .infinity, 0.4]) == 0.4)
+}

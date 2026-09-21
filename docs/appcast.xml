@@ -6,6 +6,43 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>AgendAI 会小纪</title>
         <item>
+            <title>0.1.9</title>
+            <pubDate>Mon, 21 Sep 2026 21:19:28 +0800</pubDate>
+            <link>https://github.com/leoyoul/AgendAI/releases/tag/v0.1.9</link>
+            <sparkle:version>19</sparkle:version>
+            <sparkle:shortVersionString>0.1.9</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description sparkle:format="markdown"><![CDATA[# AgendAI 会小纪 v0.1.9
+
+这是 v0.1.8 之后的补丁版本，重点修复麦克风权限请求和录音输入稳定性，并同步当前工作台与禅道 MCP 使用说明。
+
+## 修复与稳定性
+
+- 修复开发运行包缺少 `NSMicrophoneUsageDescription`，请求麦克风权限时被 macOS TCC 直接终止的问题。
+- 开发包统一从权限元数据模板生成 `Info.plist`，同时覆盖麦克风、屏幕录制和系统音频用途说明。
+- 过滤并限制异常音量值，避免 `NaN`、无穷大或超范围音频电平污染录音界面。
+- 增加权限元数据和开发包生成流程回归测试。
+- 提高开发包复制 Sparkle 框架时的临时签名稳定性。
+
+## 工作台与外部系统
+
+- 更新个人工作台、待办任务池和禅道 Claude Code MCP 的使用说明。
+- 补充当前工作台和待办任务池界面预览。
+
+## 验证
+
+- SwiftPM 完整测试：App XCTest 6 项、Swift Testing 145 项通过。
+- macOS 打包测试 20 项通过。
+- 已验证开发版 universal app 可启动，麦克风权限请求不再触发 TCC 崩溃。
+- 当前发布包使用本地 ad-hoc 签名，未使用 Apple Developer ID 或公证。
+
+## 安装
+
+下载 `AgendAI-v0.1.9-macOS-universal.dmg`，将“AgendAI 会小纪”拖入 Applications。
+]]></description>
+            <enclosure url="https://github.com/leoyoul/AgendAI/releases/download/v0.1.9/AgendAI-v0.1.9-macOS-universal.dmg" length="10027179" type="application/octet-stream" sparkle:edSignature="gsObuaZ//Hrfyg+mf8lLJ73V78oATuNr4c56R0GGa94XX1EkUts3a0hhwsw2V9THngBe7mGyjYSMlYsz5GvXDQ=="/>
+        </item>
+        <item>
             <title>0.1.8</title>
             <pubDate>Sun, 20 Sep 2026 14:11:47 +0800</pubDate>
             <link>https://github.com/leoyoul/AgendAI/releases/tag/v0.1.8</link>
@@ -85,40 +122,9 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
 ]]></description>
             <enclosure url="https://github.com/leoyoul/AgendAI/releases/download/v0.1.7-dev.3/AgendAI-v0.1.7-dev.3-macOS-universal.dmg" length="8994747" type="application/octet-stream" sparkle:edSignature="ghRkG4a+WfXxMDM8gXl/Wqz5wxxBe7+fDoIaUrLlwjRSEVUhiVz/8UUxWGD2C4m60IW/HFByoYLG41j5SF6fAw=="/>
         </item>
-        <item>
-            <title>0.1.7-dev.2</title>
-            <pubDate>Tue, 15 Sep 2026 15:32:09 +0800</pubDate>
-            <link>https://github.com/leoyoul/AgendAI/releases/tag/v0.1.7-dev.2</link>
-            <sparkle:version>9</sparkle:version>
-            <sparkle:shortVersionString>0.1.7-dev.2</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description sparkle:format="markdown"><![CDATA[# AgendAI 会小纪 v0.1.7-dev.2
-
-这是用于禅道 MCP 联调的开发预览版，不是正式稳定版。
-
-## 本版本
-
-- 会后待办改由 Claude Code 调用禅道 MCP，并增加会话级 MCP 配置文件。
-- 修复 Claude Code 进程错误只显示退出码的问题；现在可区分未安装、未认证、MCP 不可达、超时和非法 JSON，并提供“查看详情”。
-- Claude Code 子进程支持硬超时和终止；错误信息会隐藏 Token、Bearer 和 API Key。
-- 会后待办迁移至 SQLite，保留旧 `follow-ups.json` 的兼容读取和备份。
-- 设置页明确区分：会议纪要/AI 分析使用应用模型配置，禅道 MCP 使用 Claude Code 的独立模型与认证配置。
-- 禅道 MCP endpoint 与传输类型可在“设置 > 外部系统”中配置；Token 仅通过 `ZENTAO_MCP_TOKEN` 环境变量提供，不保存到应用数据库。
-
-## 已知限制
-
-- 禅道 MCP 的真实字段映射及实际创建任务操作，仍需在公司网络环境中用测试会议确认。
-- 会议纪要和 AI 分析的既有 Pi 调用链未在本版迁移。
-
-## 安装
-
-下载 `AgendAI-v0.1.7-dev.2-macOS-universal.dmg`，将“AgendAI 会小纪”拖入 Applications。
-]]></description>
-            <enclosure url="https://github.com/leoyoul/AgendAI/releases/download/v0.1.7-dev.2/AgendAI-v0.1.7-dev.2-macOS-universal.dmg" length="8884231" type="application/octet-stream" sparkle:edSignature="sZyZdZIuG2GwcXQjabcjkY8X+YAlRrsPP3y4QuZtF59Exbc1e5f9w1EGYyuhIj1ZyZ/9Plg2VpRJqDGjb+9CCw=="/>
-        </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: j/X4BGjOM6tTqCWxJwIOKeyJ3F5BhjuJCBNo6RDqVYEGu3gbiImMbuwKDqwi9xLD4VWC03Tm/1+4oOtjRruKCg==
-length: 8412
+edSignature: mP5dABaDazsi2L42zeHmiyt54jdi163NY68mC8iB9HhOGp+lL77kWOndTXvYkjK+aOZurj5NLs61n1t/qt2qDw==
+length: 8461
 -->

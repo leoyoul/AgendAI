@@ -14,6 +14,7 @@ struct RecordingControlsView: View {
             state: isAnotherMeetingRecording ? .idle : appState.recordingStartupState
         )
         let isContentLocked = appState.isMeetingContentLocked(meetingID)
+        let safeInputLevel = normalizedInputLevel(appState.inputLevel)
 
         VStack(alignment: .leading, spacing: 14) {
             HStack {
@@ -174,11 +175,11 @@ struct RecordingControlsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Text("\(Int(appState.inputLevel * 100))%")
+                    Text("\(Int(safeInputLevel * 100))%")
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
-                ProgressView(value: appState.inputLevel)
+                ProgressView(value: safeInputLevel)
                     .tint(.green)
             }
         }
@@ -202,6 +203,13 @@ struct RecordingControlsView: View {
         case .failed:
             return .red
         }
+    }
+
+    private func normalizedInputLevel(_ value: Double) -> Double {
+        guard value.isFinite else {
+            return 0
+        }
+        return min(max(value, 0), 1)
     }
 }
 

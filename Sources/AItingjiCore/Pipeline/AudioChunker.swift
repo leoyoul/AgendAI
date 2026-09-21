@@ -38,6 +38,11 @@ public struct AudioChunker: Sendable {
     }
 
     public func peakLevel(samples: [Float]) -> Float {
-        samples.map { abs($0) }.max() ?? 0
+        samples.reduce(Float.zero) { currentLevel, sample in
+            guard sample.isFinite else {
+                return currentLevel
+            }
+            return max(currentLevel, min(abs(sample), Float(1)))
+        }
     }
 }

@@ -3,6 +3,13 @@ import unittest
 from pathlib import Path
 
 
+PRIVACY_USAGE_KEYS = (
+    "NSMicrophoneUsageDescription",
+    "NSScreenCaptureUsageDescription",
+    "NSAudioCaptureUsageDescription",
+)
+
+
 class MacOSPackagingTests(unittest.TestCase):
     def setUp(self) -> None:
         self.repo = Path(__file__).resolve().parents[1]
@@ -23,6 +30,30 @@ class MacOSPackagingTests(unittest.TestCase):
         self.assertIn("create_macos_dmg.sh", script)
         self.assertIn('PACKAGE_INTERNAL_ZIP', script)
         self.assertNotIn('ditto "$TMP_APP_DIR" "$APP_DIR"', script)
+
+    def test_all_app_info_plists_have_non_empty_privacy_usage_descriptions(self) -> None:
+        for name in (
+            "AItingjiDevelopment-Info.plist",
+            "AItingjiApp-Info.plist",
+            "AItingjiTestApp-Info.plist",
+        ):
+            with (self.repo / "Packaging" / name).open("rb") as file:
+                info = plistlib.load(file)
+
+            for key in PRIVACY_USAGE_KEYS:
+                self.assertIsInstance(info.get(key), str, f"{name} 缺少 {key}")
+                self.assertTrue(info[key].strip(), f"{name} 的 {key} 不能为空")
+
+    def test_development_run_stages_the_privacy_metadata_template(self) -> None:
+        script = (self.repo / "script" / "build_and_run.sh").read_text()
+
+        self.assertIn(
+            'DEV_INFO_PLIST="$ROOT_DIR/Packaging/AItingjiDevelopment-Info.plist"',
+            script,
+        )
+        self.assertIn('cp "$DEV_INFO_PLIST" "$APP_CONTENTS/Info.plist"', script)
+        self.assertNotIn('cat > "$APP_CONTENTS/Info.plist"', script)
+        self.assertIn('find "$APP_BUNDLE" -exec xattr -c {} +', script)
 
     def test_dmg_helper_creates_standard_drag_install_layout(self) -> None:
         script = (self.repo / "scripts" / "create_macos_dmg.sh").read_text()
@@ -116,7 +147,7 @@ class MacOSPackagingTests(unittest.TestCase):
 
         self.assertIn('codesign --verify --deep --strict', script)
         self.assertIn('hdiutil attach', script)
-        self.assertIn('DMG_PATH="$ROOT_DIR/dist/AgendAI-v0.1.8-macOS-universal.dmg"', script)
+        self.assertIn('DMG_PATH="$ROOT_DIR/dist/AgendAI-v0.1.9-macOS-universal.dmg"', script)
         self.assertIn('ditto "$MOUNTED_APP" "$TARGET_APP"', script)
         self.assertIn("$1 ~ /^\\/dev\\//", script)
         self.assertNotIn('SOURCE_ZIP=', script)
@@ -125,7 +156,7 @@ class MacOSPackagingTests(unittest.TestCase):
     def test_readme_describes_dmg_install_and_sparkle_updates(self) -> None:
         readme = (self.repo / "README.md").read_text()
 
-        self.assertIn("AgendAI-v0.1.8-macOS-universal.dmg", readme)
+        self.assertIn("AgendAI-v0.1.9-macOS-universal.dmg", readme)
         self.assertIn("Sparkle", readme)
         self.assertIn("ad-hoc", readme)
         self.assertIn("Developer ID", readme)
@@ -151,8 +182,8 @@ class MacOSPackagingTests(unittest.TestCase):
             info = plistlib.load(file)
 
         self.assertEqual(info["CFBundleIdentifier"], "com.local.aitingji")
-        self.assertEqual(info["CFBundleShortVersionString"], "0.1.8")
-        self.assertEqual(info["CFBundleVersion"], "18")
+        self.assertEqual(info["CFBundleShortVersionString"], "0.1.9")
+        self.assertEqual(info["CFBundleVersion"], "19")
         self.assertNotIn("AgendAIDataDirectoryName", info)
 
     def test_isolated_test_app_has_independent_identity_and_data_directory(self) -> None:
@@ -161,8 +192,8 @@ class MacOSPackagingTests(unittest.TestCase):
 
         self.assertEqual(info["CFBundleDisplayName"], "AgendAI 会小纪 测试版")
         self.assertEqual(info["CFBundleIdentifier"], "com.local.aitingji.test")
-        self.assertEqual(info["CFBundleShortVersionString"], "0.1.8")
-        self.assertEqual(info["CFBundleVersion"], "18")
+        self.assertEqual(info["CFBundleShortVersionString"], "0.1.9")
+        self.assertEqual(info["CFBundleVersion"], "19")
         self.assertEqual(info["AgendAIDataDirectoryName"], "会小纪测试版")
 
     def test_test_app_scripts_do_not_target_the_production_app(self) -> None:
